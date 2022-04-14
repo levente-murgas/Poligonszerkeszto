@@ -43,7 +43,7 @@ const char * const vertexSource = R"(
 	void main() {
         vec4 pos;
 		pos = vec4(vp.x, vp.y, 0, 1) * MVP;	// transrm vp from modeling space to normalized device space
-        pos.w = sqrt(pos.x * pos.x + pos.y * pos.y + 1)+1;
+       pos.w = sqrt(pos.x * pos.x + pos.y * pos.y + 1)+1;
         gl_Position=pos;
 	}
 )";
@@ -86,9 +86,13 @@ public:
     vec2 wTranslate;	// translation
     float phi;			// angle of rotation
     double size;
+    int weight;
     Circle() { Animate(0); }
     void create() {
         size = 3;
+        while(weight!=0){
+            weight= rand()%8;
+        }
         glGenVertexArrays(1, &vao);    // create 1 vertex array object
         glBindVertexArray(vao);        // make it active
 
@@ -151,6 +155,7 @@ public:
         // set GPU uniform matrix variable MVP with the content of CPU variable MVPTransform
         mat4 MVPTransform = M() * camera.V() * camera.P();
         gpuProgram.setUniform(MVPTransform, "MVP");
+        gpuProgram.setUniform(vec3(1.0f, 0.0f, 0.0f), "color");
         glBindVertexArray(vao);	// make the vao and its vbos active playing the role of the data source
         glDrawArrays(GL_TRIANGLE_FAN, 0, 21);	// draw a single triangle with vertices defined in vao
     }
@@ -212,25 +217,83 @@ public:
             // set GPU uniform matrix variable MVP with the content of CPU variable MVPTransform
             mat4 MVPTransform = M() * camera.V() * camera.P();
             gpuProgram.setUniform(MVPTransform, "MVP");
+            gpuProgram.setUniform(vec3(1.0f, 1.0f, 1.0f), "color");
             glBindVertexArray(vao);
             glDrawArrays(GL_LINE_STRIP, 0, vertexData.size() / 5);
         }
     }
 };
+class Molecule{
+public:
+    float sx, sy;		// scaling
+    vec2 wTranslate;	// translation
+    float phi;			// angle of rotation
+    int weight;
+    std::vector<vec2>   controlPoints; // interleaved data of coordinates and colors
+    std::vector<float>  vertexData; // interleaved data of coordinates and colors
+    Circle circle;
+    LineStrip lineStrip;
+    void create() {
+    circle.create();
+    lineStrip.create();
+    }
+    mat4 M() {
+        mat4 Mscale(sx, 0, 0, 0,
+                    0, sy, 0, 0,
+                    0, 0,  0, 0,
+                    0, 0,  0, 1); // scaling
+
+        mat4 Mrotate(cosf(phi), sinf(phi), 0, 0,
+                     -sinf(phi), cosf(phi), 0, 0,
+                     0,        0,        1, 0,
+                     0,        0,        0, 1); // rotation
+
+        mat4 Mtranslate(1,            0,            0, 0,
+                        0,            1,            0, 0,
+                        0,            0,            0, 0,
+                        wTranslate.x, wTranslate.y, 0, 1); // translation
+
+        return Mscale * Mrotate * Mtranslate;	// model transformation
+    }
+    void Draw() {
+        float x;
+        if(rand()%2==0)
+        x = rand()%500*-1;
+        else {x = rand()%500;}
+        float y;
+        if (rand() % 2 == 0)
+            y = rand() % 500 * -1;
+        else y = rand() % 500;
+        float x2;
+        if(rand()%2==0)
+            x2 = rand()%500*-1;
+        else x2 = rand()%500;
+        float y2;
+        if (rand() % 2 == 0)
+            y2 = rand() % 500 * -1;
+        else y2 = rand() % 500;
+        circle.wTranslate.x=x;
+        circle.wTranslate.y=y;
+        lineStrip.AddPoint(x/100,y/100);
+        lineStrip.AddPoint(x2/100,y2/100);
+        lineStrip.Draw();
+        circle.Draw();
+        circle.wTranslate.x =x2;
+        circle.wTranslate.y =y2;
+        circle.Draw();
+
+    }
+};
+
 
 // The virtual world: collection of two objects
-Circle circle;
-LineStrip lineStrip;
+Molecule molecule;
 // Initialization, create an OpenGL context
 void onInitialization() {
     glViewport(0, 0, windowWidth, windowHeight); 	// Position and size of the photograph on screen
     glLineWidth(2.0f); // Width of lines in pixels
 
-    circle.create();
-    lineStrip.create();
-    lineStrip.AddPoint(0.0f,0.0f);
-    lineStrip.AddPoint(2.0f,2.0f);
-
+molecule.create();
     // create program for the GPU
     gpuProgram.create(vertexSource, fragmentSource, "fragmentColor");
 
@@ -249,8 +312,7 @@ void onInitialization() {
 void onDisplay() {
     glClearColor(0.5, 0.5, 0.5, 0);							// background color
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the screen
-    circle.Draw();
-    lineStrip.Draw();
+    molecule.Draw();
     glutSwapBuffers();
 }
 
@@ -263,6 +325,7 @@ void onKeyboard(unsigned char key, int pX, int pY) {
             case 's': camera.Pan(vec2( 0,-1)); break;
             case 'q': camera.Zoom(0.9f); break;
             case 'e': camera.Zoom(1.1f); break;
+
         }
         glutPostRedisplay();
     }
@@ -282,8 +345,8 @@ void onMouse(int button, int state, int pX, int pY) {
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
     long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
-       lineStrip.AddPoint(cosf(time) * 6,sinf(time) * 6);
-        glutPostRedisplay();
+   // molecule.lineStrip.AddPoint(cosf(time) * 6,sinf(time) * 6);
+       // glutPostRedisplay();
 
 
 }
