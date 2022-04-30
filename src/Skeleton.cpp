@@ -1,25 +1,25 @@
 //=============================================================================================
-// Mintaprogram: Zöld háromszög. Ervenyes 2019. osztol.
+// Mintaprogram: Z?ld h?romsz?g. Ervenyes 2019. osztol.
 //
 // A beadott program csak ebben a fajlban lehet, a fajl 1 byte-os ASCII karaktereket tartalmazhat, BOM kihuzando.
 // Tilos:
 // - mast "beincludolni", illetve mas konyvtarat hasznalni
 // - faljmuveleteket vegezni a printf-et kiveve
 // - Mashonnan atvett programresszleteket forrasmegjeloles nelkul felhasznalni es
-// - felesleges programsorokat a beadott programban hagyni!!!!!!! 
+// - felesleges programsorokat a beadott programban hagyni!!!!!!!
 // - felesleges kommenteket a beadott programba irni a forrasmegjelolest kommentjeit kiveve
 // ---------------------------------------------------------------------------------------------
 // A feladatot ANSI C++ nyelvu forditoprogrammal ellenorizzuk, a Visual Studio-hoz kepesti elteresekrol
 // es a leggyakoribb hibakrol (pl. ideiglenes objektumot nem lehet referencia tipusnak ertekul adni)
 // a hazibeado portal ad egy osszefoglalot.
 // ---------------------------------------------------------------------------------------------
-// A feladatmegoldasokban csak olyan OpenGL fuggvenyek hasznalhatok, amelyek az oran a feladatkiadasig elhangzottak 
+// A feladatmegoldasokban csak olyan OpenGL fuggvenyek hasznalhatok, amelyek az oran a feladatkiadasig elhangzottak
 // A keretben nem szereplo GLUT fuggvenyek tiltottak.
 //
 // NYILATKOZAT
 // ---------------------------------------------------------------------------------------------
-// Nev    : 
-// Neptun : 
+// Nev    :
+// Neptun :
 // ---------------------------------------------------------------------------------------------
 // ezennel kijelentem, hogy a feladatot magam keszitettem, es ha barmilyen segitseget igenybe vettem vagy
 // mas szellemi termeket felhasznaltam, akkor a forrast es az atvett reszt kommentekben egyertelmuen jeloltem.
@@ -53,7 +53,7 @@ const char *const vertexSource = R"(
 const char *const fragmentSource = R"(
 	#version 330			// Shader 3.3
 	precision highp float;	// normal floats, makes no difference on desktop computers
-	
+
 	uniform vec3 color;		// uniform variable, the color of the primitive
 	out vec4 outColor;		// computed color of the current pixel
 
@@ -110,20 +110,20 @@ public:
                             vec4(0, 1, 0, 0),
                             vec4(0, 0, 1, 0),
                             vec4(0, 0, 0, 1));
-        power = rand() % 500;
-        while (power == 0) { power = rand() % 500; }
+        power = rand() % 10000;
+        while (power == 0) { power = rand() % 10000; }
         if (rand() % 2 == 0)
             power = power * -1;
-        float colornum = ((float) power) / 10;
+        float colornum = ((float) power) / 10000;
         if (power < 0) {
             colornum = colornum * -1;
             color = vec3(colornum, 0.0f, 0.0f);
         } else
             color = vec3(0.0f, 0.0F, colornum);
 
-        weight = rand() % 50;
-        while (weight == 0) { weight = rand() % 50; }
-        size = 1 + ((float) weight) / 20;
+        weight = rand() % 15000;
+        while (weight == 0) { weight = rand() % 15000; }
+        size = 1.5 + (((float) weight) / 5000);
         glGenVertexArrays(1, &vao);    // create 1 vertex array object
         glBindVertexArray(vao);        // make it active
 
@@ -472,7 +472,7 @@ public:
         for (int i = 0; i < atoms.size(); ++i) {
             atoms[i].Rotate(omega, tcenter);
         }
-        //bonds[i].wTranslate = vec2(tcenter);//ide megadom a tomegközéppontot
+        //bonds[i].wTranslate = vec2(tcenter);//ide megadom a tomegk?z?ppontot
         for (int i = 0; i < bonds.size(); ++i) {
             bonds[i].Rotate(omega, tcenter);
         }
@@ -499,13 +499,14 @@ void onInitialization() {
     glutSwapBuffers();
 
     printf("\nUsage: \n");
-    printf("Mouse Left Button: Add control point to polyline\n");
-    printf("Key 'a': Camera pan -x\n");
+    printf("Key 's': Camera pan -x\n");
     printf("Key 'd': Camera pan +x\n");
-    printf("Key 'w': Camera pan -y\n");
-    printf("Key 's': Camera pan +y\n");
+    printf("Key 'e': Camera pan -y\n");
+    printf("Key 'x': Camera pan +y\n");
     printf("Key 'q': Camera zoom in\n");
-    printf("Key 'e': Camera zoom out\n");
+    printf("Key 'w': Camera zoom out\n");
+    printf("Key ' ': respawn atoms\n");
+
 }
 
 // Window has become invalid: Redraw
@@ -520,18 +521,18 @@ void onDisplay() {
 // Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
     if (key == 's')
-        camera.Pan(vec2(-1, 0));
+        camera.Pan(vec2(-0.1, 0.0));
     else if (key == 'd')
-        camera.Pan(vec2(+1, 0));
+        camera.Pan(vec2(0.1, 0));
     else if (key == 'e')
-        camera.Pan(vec2(0, 1));
+        camera.Pan(vec2(0, 0.1));
     else if (key == 'x')
-        camera.Pan(vec2(0, -1));
+        camera.Pan(vec2(0, -0.1));
     else if (key == 'q')
         camera.Zoom(0.9f);
     else if (key == 'w')
         camera.Zoom(1.1f);
-    else if (key == 'r') {
+    else if (key == ' ') {
         camera.wSize = vec2(200, 200);
         camera.wCenter = vec2(0, 0);
         molecule.create(0);
@@ -542,7 +543,7 @@ void onKeyboard(unsigned char key, int pX, int pY) {
     } else if (key == 'g') {
         molecule.Move(vec2(-10, -10));
         molecule2.Move(vec2(10, 10));
-    } else if (key == ' ') {
+    } else if (key == 'r') {
         molecule.Rotate(molecule.step);
         molecule.step = molecule.step + 0.1;
     }
@@ -562,7 +563,7 @@ void onMouse(int button, int state, int pX, int pY) {
 }
 
 // Idle event indicating that some time elapsed: do animation here
-void fiz(Molecule &molecule, Molecule &molecule2) {
+void fiz(Molecule &molecule, Molecule &molecule2, float dt) {
     for (int i = 0; i < molecule.atoms.size(); ++i) {
         for (int j = 0; j < molecule2.atoms.size(); ++j) {
             float culomb = (8.988e9 * molecule.atoms[i].power * 1.602e-19 * molecule2.atoms[j].power * 1.602e-19) /
@@ -572,39 +573,54 @@ void fiz(Molecule &molecule, Molecule &molecule2) {
             vec2 arm = molecule.atoms[i].wTranslate - molecule.tcenter;
             vec2 fullforce = dot(force, arm / length(arm)) * (arm / length(arm));
             vec2 acc = fullforce / molecule.weight / 1.6735e-27;
-            molecule.speed = molecule.speed + acc * 0.01;
+            molecule.speed = molecule.speed + acc * dt;
             vec2 rotForce = force - fullforce;
             float torque = rotForce.x * arm.y - rotForce.y * arm.x;
             float in = 0.0f;
             for (int j = 0; j < molecule.atoms.size(); j++) {
                 in += 1.6735e-27 * dot(molecule.atoms[j].wTranslate - molecule.tcenter, molecule.atoms[j].wTranslate - molecule.tcenter);
             }
-            molecule.angularspeed += torque / in * 0.01;
+            molecule.angularspeed += torque / in * dt;
 
         }
+        float torque2 = - molecule.angularspeed * 0.0000000000000000000000000000000000000000000001;
+        float in = 0.0f;
+        for (int j = 0; j < molecule.atoms.size(); j++) {
+            in += 1.6735e-27 * dot(molecule.atoms[j].wTranslate - molecule.tcenter, molecule.atoms[j].wTranslate - molecule.tcenter);
+        }
+        molecule.angularspeed += torque2 / in * dt;
 
-        vec2 force2 = -molecule.speed * 0.000000000000000000000000000000000000001;
+
+
+
+        vec2 force2 = -molecule.speed * 0.00000000000000000001;
         if(length(force2)>0.001){
-        vec2 arm = molecule.atoms[i].wTranslate - molecule.tcenter;
-        vec2 fullforce = dot(force2, arm / length(arm)) * (arm / length(arm));
-        vec2 acc = fullforce / molecule.weight / 1.6735e-27;
-        molecule.speed = molecule.speed + acc * 0.01;
+            vec2 arm = molecule.atoms[i].wTranslate - molecule.tcenter;
+            vec2 fullforce = dot(force2, arm / length(arm)) * (arm / length(arm));
+            vec2 acc = fullforce / molecule.weight / 1.6735e-27;
+            molecule.speed = molecule.speed + acc * dt;
             vec2 rotForce = force2 - fullforce;
             float torque = rotForce.x * arm.y - rotForce.y * arm.x;
             float in = 0.0f;
             for (int j = 0; j < molecule.atoms.size(); j++) {
                 in += 1.6735e-27 * dot(molecule.atoms[j].wTranslate - molecule.tcenter, molecule.atoms[j].wTranslate - molecule.tcenter);
             }
-            molecule.angularspeed += torque / in * 0.01;
-    }}
-    molecule.Move(molecule.speed * 0.01);
-    molecule.Rotate(molecule.angularspeed/1.25 * 0.01);
+            molecule.angularspeed += torque / in * dt;
+        }}
+    molecule.Move(molecule.speed * dt);
+    molecule.Rotate(molecule.angularspeed/1.25 * dt);
 }
-
 void onIdle() {
-
-    fiz(molecule, molecule2);
-    fiz(molecule2, molecule);
+    static float last = 0.0f;
+    float time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+    float elapsed = time - last;
+    last = time;
+    while (elapsed > 0) {
+        float dt = std::min(elapsed, 0.01f);
+        fiz(molecule, molecule2,dt);
+        fiz(molecule2, molecule,dt);
+        elapsed -= 0.01f;
+    }
 
     glutPostRedisplay();
 }
