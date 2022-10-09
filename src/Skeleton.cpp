@@ -59,15 +59,6 @@ const char * const fragmentSource = R"(
 	}
 )";
 
-float DistToLine(vec2 pt1, vec2 pt2, vec2 testPt)
-{
-    vec2 lineDir = pt2 - pt1;
-    vec2 perpDir = vec2(lineDir.y, -lineDir.x);
-    vec2 dirToPt1 = pt1 - testPt;
-    return fabs(dot(normalize(perpDir), dirToPt1));
-}
-
-
 // 2D camera
 class Camera2D {
     vec2 wCenter; // center in world coordinates
@@ -88,22 +79,11 @@ Camera2D camera;		// 2D camera
 GPUProgram gpuProgram; // vertex and fragment shaders
 
 class MyPolygon {
-    unsigned int vaoLines, vboLines;
     unsigned int vaoPoints, vboPoints;
 protected:
-    std::vector<vec2> wLines;
     std::vector<vec2> wPoints;
 public:
     void create(){
-        //Lines
-        glGenVertexArrays(1,&vaoLines);
-        glBindVertexArray(vaoLines);
-        glGenBuffers(1,&vboLines);
-        glBindBuffer(GL_ARRAY_BUFFER,vboLines);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
-
-        //Points
         glGenVertexArrays(1,&vaoPoints);
         glBindVertexArray(vaoPoints);
         glGenBuffers(1,&vboPoints);
