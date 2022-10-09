@@ -28,9 +28,8 @@ void onIdle();
 
 // Entry point of the application
 int main(int argc, char * argv[]) {
-	// Initialize GLUT, Glew and OpenGL
+	// Initialize GLUT, Glew and OpenGL 
 	glutInit(&argc, argv);
-    argv[0]="Graf - 1hf JNDSHB";
 
 	// OpenGL major and minor versions
 	int majorVersion = 3, minorVersion = 3;

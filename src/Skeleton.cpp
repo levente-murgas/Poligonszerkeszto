@@ -18,8 +18,8 @@
 //
 // NYILATKOZAT
 // ---------------------------------------------------------------------------------------------
-// Nev    : 
-// Neptun : 
+// Nev    : Murgás Levente
+// Neptun : M5E2T9
 // ---------------------------------------------------------------------------------------------
 // ezennel kijelentem, hogy a feladatot magam keszitettem, es ha barmilyen segitseget igenybe vettem vagy
 // mas szellemi termeket felhasznaltam, akkor a forrast es az atvett reszt kommentekben egyertelmuen jeloltem.
@@ -39,10 +39,10 @@ const char * const vertexSource = R"(
 	precision highp float;		// normal floats, makes no difference on desktop computers
 
 	uniform mat4 MVP;			// uniform variable, the Model-View-Projection transformation matrix
-	layout(location = 0) in vec2 vp;	// Varying input: vp = vertex position is expected in attrib array 0
+	layout(location = 0) in vec2 vertexPosition;
 
 	void main() {
-		gl_Position = vec4(vp.x, vp.y, 0, 1) * MVP;		// transform vp from modeling space to normalized device space
+		gl_Position = vec4(vertexPosition.x, vertexPosition.y, 0, 1) * MVP;		// transform vp from modeling space to normalized device space
 	}
 )";
 
@@ -59,31 +59,141 @@ const char * const fragmentSource = R"(
 	}
 )";
 
+float DistToLine(vec2 pt1, vec2 pt2, vec2 testPt)
+{
+    vec2 lineDir = pt2 - pt1;
+    vec2 perpDir = vec2(lineDir.y, -lineDir.x);
+    vec2 dirToPt1 = pt1 - testPt;
+    return fabs(dot(normalize(perpDir), dirToPt1));
+}
+
+
+// 2D camera
+class Camera2D {
+    vec2 wCenter; // center in world coordinates
+    vec2 wSize;   // width and height in world coordinates
+public:
+    Camera2D() : wCenter(0, 0), wSize(200, 200) { }
+
+    mat4 V() { return TranslateMatrix(-wCenter); }
+    mat4 P() { return ScaleMatrix(vec2(2 / wSize.x, 2 / wSize.y)); }
+
+    mat4 Vinv() { return TranslateMatrix(wCenter); }
+    mat4 Pinv() { return ScaleMatrix(vec2(wSize.x / 2, wSize.y / 2)); }
+
+    void Zoom(float s) { wSize = wSize * s; }
+    void Pan(vec2 t) { wCenter = wCenter + t; }
+};
+Camera2D camera;		// 2D camera
 GPUProgram gpuProgram; // vertex and fragment shaders
-unsigned int vao;	   // virtual world on the GPU
+
+class MyPolygon {
+    unsigned int vaoLines, vboLines;
+    unsigned int vaoPoints, vboPoints;
+protected:
+    std::vector<vec2> wLines;
+    std::vector<vec2> wPoints;
+public:
+    void create(){
+        //Lines
+        glGenVertexArrays(1,&vaoLines);
+        glBindVertexArray(vaoLines);
+        glGenBuffers(1,&vboLines);
+        glBindBuffer(GL_ARRAY_BUFFER,vboLines);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
+
+        //Points
+        glGenVertexArrays(1,&vaoPoints);
+        glBindVertexArray(vaoPoints);
+        glGenBuffers(1,&vboPoints);
+        glBindBuffer(GL_ARRAY_BUFFER,vboPoints);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
+    }
+
+    void AddPoint(float cX, float cY) {
+        vec4 wVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
+        wPoints.push_back(vec2(wVertex.x,wVertex.y));
+        printf("Coordinates of %zu. point: x: %f y: %f\n", wPoints.size(),wVertex.x,wVertex.y);
+    }
+
+    vec4 lerp(const vec4& p, const vec4& q, float t) {
+        return p * (1 - t) + q * t;
+    }
+
+    int AddMovingPoint(float cX, float cY){
+        unsigned int pos = -1;
+        if(wPoints.size() >= 2) {
+            vec4 hVertex = vec4(cX, cY, 0, 1) * camera.Pinv() * camera.Vinv();
+            vec2 wVertex = vec2(hVertex.x, hVertex.y);
+            float shortest;
+            float distance;
+            for (unsigned int p = 0; p < wPoints.size(); p++) {
+                vec4 p1 = vec4(wPoints[p].x, wPoints[p].y,0,1);
+                vec4 p2;
+                if (p != wPoints.size() - 1) { //if it's not the last Point
+                    p2 = vec4(wPoints[p + 1].x, wPoints[p + 1].y,0,1);
+                } else { //last point - we connect with the first point
+                    p2 = vec4(wPoints[0].x, wPoints[0].y,0,1);
+                }
+                //distance of wVertex from segment
+                for(int i = 0; i < 1000; i++){
+                    float t = i / (1000 - 1.0f);
+                    vec4 car = lerp(p1,p2,t);
+                    distance = dot(car - hVertex, car - hVertex);
+                    if(p == 0 && i == 0){ //give shortest a starting value
+                        shortest = distance;
+                    }
+                    if (distance < shortest) {
+                        shortest = distance;
+                        pos = p;
+                    }
+                }
+            }
+            wPoints.insert(wPoints.begin() + pos + 1, vec2(wVertex.x, wVertex.y));
+            printf("distance = %f \n", distance);
+        }
+        return pos + 1;
+    }
+
+    void MovePoint(int movingPoint, float cX, float cY){
+        vec4 hVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
+        wPoints[movingPoint] = vec2(hVertex.x,hVertex.y);
+    }
+
+    void Draw(){
+        mat4 VPTransform = camera.V() * camera.P();
+        gpuProgram.setUniform(VPTransform, "MVP");
+
+        glBindVertexArray(vaoPoints);
+        glBindBuffer(GL_ARRAY_BUFFER,vboPoints);
+        glBufferData(GL_ARRAY_BUFFER,wPoints.size() * sizeof(vec2), &wPoints[0], GL_DYNAMIC_DRAW);
+
+        if(wPoints.size() >= 2){
+            gpuProgram.setUniform(vec3(1,1,1),"color");
+            glDrawArrays(GL_LINE_LOOP,0,wPoints.size());
+        }
+
+        if(!wPoints.empty()) {
+            gpuProgram.setUniform(vec3(1,0,0),"color");
+            glPointSize(10.0f);
+            glDrawArrays(GL_POINTS,0,wPoints.size());
+        }
+
+    }
+};
+
+
+
+MyPolygon polygon;
+
+
 
 // Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
-
-	glGenVertexArrays(1, &vao);	// get 1 vao id
-	glBindVertexArray(vao);		// make it active
-
-	unsigned int vbo;		// vertex buffer object
-	glGenBuffers(1, &vbo);	// Generate 1 buffer
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	// Geometry with 24 bytes (6 floats or 3 x 2 coordinates)
-	float vertices[] = { -0.8f, -0.8f, -0.6f, 1.0f, 0.8f, -0.2f };
-	glBufferData(GL_ARRAY_BUFFER, 	// Copy to GPU target
-		sizeof(vertices),  // # bytes
-		vertices,	      	// address
-		GL_STATIC_DRAW);	// we do not change later
-
-	glEnableVertexAttribArray(0);  // AttribArray 0
-	glVertexAttribPointer(0,       // vbo -> AttribArray 0
-		2, GL_FLOAT, GL_FALSE, // two floats/attrib, not fixed-point
-		0, NULL); 		     // stride, offset: tightly packed
-
+    polygon.create();
 	// create program for the GPU
 	gpuProgram.create(vertexSource, fragmentSource, "outColor");
 }
@@ -91,23 +201,8 @@ void onInitialization() {
 // Window has become invalid: Redraw
 void onDisplay() {
 	glClearColor(0, 0, 0, 0);     // background color
-	glClear(GL_COLOR_BUFFER_BIT); // clear frame buffer
-
-	// Set color to (0, 1, 0) = green
-	int location = glGetUniformLocation(gpuProgram.getId(), "color");
-	glUniform3f(location, 0.0f, 1.0f, 0.0f); // 3 floats
-
-	float MVPtransf[4][4] = { 1, 0, 0, 0,    // MVP matrix, 
-							  0, 1, 0, 0,    // row-major!
-							  0, 0, 1, 0,
-							  0, 0, 0, 1 };
-
-	location = glGetUniformLocation(gpuProgram.getId(), "MVP");	// Get the GPU location of uniform variable MVP
-	glUniformMatrix4fv(location, 1, GL_TRUE, &MVPtransf[0][0]);	// Load a 4x4 row-major float matrix to the specified location
-
-	glBindVertexArray(vao);  // Draw call
-	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, 3 /*# Elements*/);
-
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear frame buffer
+    polygon.Draw();
 	glutSwapBuffers(); // exchange buffers for double buffering
 }
 
@@ -120,31 +215,39 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 void onKeyboardUp(unsigned char key, int pX, int pY) {
 }
 
-// Move mouse with key pressed
-void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the cursor in the coordinate system of the operation system
-	// Convert to normalized device space
-	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
-	float cY = 1.0f - 2.0f * pY / windowHeight;
-	printf("Mouse moved to (%3.2f, %3.2f)\n", cX, cY);
-}
+
+int movingPoint = -1;
 
 // Mouse click event
 void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel coordinates of the cursor in the coordinate system of the operation system
-	// Convert to normalized device space
-	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
-	float cY = 1.0f - 2.0f * pY / windowHeight;
+	if(button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        // Convert to normalized device space
+        float cX = 2.0f * pX / windowWidth - 1;    // flip y axis
+        float cY = 1.0f - 2.0f * pY / windowHeight;
+        polygon.AddPoint(cX,cY);
+        glutPostRedisplay();
+    }
 
-	char * buttonStat;
-	switch (state) {
-	case GLUT_DOWN: buttonStat = "pressed"; break;
-	case GLUT_UP:   buttonStat = "released"; break;
-	}
+    if(button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN){
+        // Convert to normalized device space
+        float cX = 2.0f * pX / windowWidth - 1;    // flip y axis
+        float cY = 1.0f - 2.0f * pY / windowHeight;
+        movingPoint = polygon.AddMovingPoint(cX,cY);
+        glutPostRedisplay();
+    }
 
-	switch (button) {
-	case GLUT_LEFT_BUTTON:   printf("Left button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);   break;
-	case GLUT_MIDDLE_BUTTON: printf("Middle button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY); break;
-	case GLUT_RIGHT_BUTTON:  printf("Right button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);  break;
-	}
+    if(button == GLUT_RIGHT_BUTTON && state == GLUT_UP){
+        movingPoint = -1;
+    }
+}
+
+// Move mouse with key pressed
+void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the cursor in the coordinate system of the operation system
+    // Convert to normalized device space
+    float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
+    float cY = 1.0f - 2.0f * pY / windowHeight;
+    if(movingPoint >= 0) polygon.MovePoint(movingPoint,cX,cY);
+    glutPostRedisplay();
 }
 
 // Idle event indicating that some time elapsed: do animation here

@@ -95,6 +95,10 @@ struct vec4 {
 	void operator+=(const vec4 right) { x += right.x; y += right.y; z += right.z; w += right.w; }
 };
 
+inline float dot(const vec4& v1, const vec4& v2) {
+	return (v1.x * v2.x + v1.y * v2.y + v1.z * v2.z + v1.w * v2.w);
+}
+
 inline vec4 operator*(float a, const vec4& v) {
 	return vec4(v.x * a, v.y * a, v.z * a, v.w * a);
 }
