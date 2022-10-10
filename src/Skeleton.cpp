@@ -64,7 +64,7 @@ class Camera2D {
     vec2 wCenter; // center in world coordinates
     vec2 wSize;   // width and height in world coordinates
 public:
-    Camera2D() : wCenter(0, 0), wSize(200, 200) { }
+    Camera2D() : wCenter(0, 0), wSize(20, 20) { }
 
     mat4 V() { return TranslateMatrix(-wCenter); }
     mat4 P() { return ScaleMatrix(vec2(2 / wSize.x, 2 / wSize.y)); }
@@ -77,11 +77,13 @@ public:
 };
 Camera2D camera;		// 2D camera
 GPUProgram gpuProgram; // vertex and fragment shaders
+const int nTesselatedVertices = 100;
 
 class MyPolygon {
     unsigned int vaoPoints, vboPoints;
 protected:
     std::vector<vec2> wPoints;
+    std::vector<float> ts; //knots
 public:
     void create(){
         glGenVertexArrays(1,&vaoPoints);
@@ -95,6 +97,7 @@ public:
     void AddPoint(float cX, float cY) {
         vec4 wVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
         wPoints.push_back(vec2(wVertex.x,wVertex.y));
+        ts.push_back((float)wPoints.size());
         printf("Coordinates of %zu. point: x: %f y: %f\n", wPoints.size(),wVertex.x,wVertex.y);
     }
 
@@ -109,32 +112,75 @@ public:
             vec2 wVertex = vec2(hVertex.x, hVertex.y);
             float shortest;
             float distance;
+            vec4 closestOnSegment;
             for (unsigned int p = 0; p < wPoints.size(); p++) {
                 vec4 p1 = vec4(wPoints[p].x, wPoints[p].y,0,1);
-                vec4 p2;
-                if (p != wPoints.size() - 1) { //if it's not the last Point
-                    p2 = vec4(wPoints[p + 1].x, wPoints[p + 1].y,0,1);
-                } else { //last point - we connect with the first point
-                    p2 = vec4(wPoints[0].x, wPoints[0].y,0,1);
-                }
+                //if p is the last we loop back to the first point with modulo size
+                vec4 p2 = vec4(wPoints[(p + 1) % wPoints.size()].x, wPoints[(p + 1) % wPoints.size()].y,0,1);
                 //distance of wVertex from segment
                 for(int i = 0; i < 1000; i++){
                     float t = i / (1000 - 1.0f);
                     vec4 car = lerp(p1,p2,t);
-                    distance = dot(car - hVertex, car - hVertex);
+                    distance = sqrt(dot(car - hVertex, car - hVertex));
                     if(p == 0 && i == 0){ //give shortest a starting value
                         shortest = distance;
                     }
                     if (distance < shortest) {
                         shortest = distance;
                         pos = p;
+                        closestOnSegment = car;
                     }
                 }
             }
             wPoints.insert(wPoints.begin() + pos + 1, vec2(wVertex.x, wVertex.y));
+            ts.insert(ts.begin() + pos + 1,(float)(pos + 1));
             printf("distance = %f \n", distance);
+            printf("The closest point on the segment was at x: %f y: %f\n",closestOnSegment.x,closestOnSegment.y);
+
         }
         return pos + 1;
+    }
+
+    vec2 Hermite(vec2 p0, vec2 v0, float t0, vec2 p1, vec2 v1, float t1, float t){
+        float deltat = t1 - t0;
+        t -= t0;
+        float deltat2 = deltat * deltat;
+        float deltat3 = deltat * deltat2;
+        vec2 a0 = p0, a1 = v0;
+        vec2 a2 = (p1 - p0) * 3 / deltat2 - (v1 + v0 * 2) / deltat;
+        vec2 a3 = (p0 - p1) * 2 / deltat3 + (v1 + v0) / deltat2;
+        return ((a3 * t + a2) * t + a1) * t + a0;
+    }
+
+    float tStart(){ return ts[0]; }
+    float tEnd(){ return ts[wPoints.size() - 1]; }
+
+    float tension = -1;
+
+    vec2 r(float t){
+        for (int i = 0; i < wPoints.size() - 1; i++){
+            if(ts[i] <= t && t <= ts[i + 1]){
+                vec2 vPrev = (i > 0) ? (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1])) : (wPoints[i] - wPoints[wPoints.size() - 1]) * (1.0f / (ts[i] - ts[wPoints.size() - 1]));
+                vec2 vCur = (wPoints[i + 1] - wPoints[i]) / (ts[i + 1] - ts[i]);
+                vec2 vNext = (i < wPoints.size() - 2) ? (wPoints[i + 2] - wPoints[i + 1]) / (ts[i + 2] - ts[i + 1]) : (wPoints[0] - wPoints[i + 1]) / ts[0] - ts[i + 1];
+                vec2 v0 = (vPrev + vCur) * (float)((1 - tension) / 2);
+                vec2 v1 = (vCur + vNext) * (float)((1 - tension) / 2);
+                return Hermite(wPoints[i], v0, ts[i], wPoints[i + 1], v1, ts[i + 1], t);
+            }
+        }
+        return wPoints[0];
+    }
+
+    void CatmullRom(){
+        if(wPoints.size() >= 2){
+            std::vector<vec2> vertexData;
+            for(int i = 0; i < nTesselatedVertices; i++) {
+                float tNormalized = (float)i / (nTesselatedVertices - 1);
+                float t = tStart() + (tEnd() - tStart()) * tNormalized;
+                vec2 wVertex = r(t);
+                vertexData.push_back(wVertex);
+            }
+        }
     }
 
     void MovePoint(int movingPoint, float cX, float cY){
@@ -188,7 +234,13 @@ void onDisplay() {
 
 // Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
-	if (key == 'd') glutPostRedisplay();         // if d, invalidate display, i.e. redraw
+	if (key == 's') {
+        polygon.CatmullRom();
+        glutPostRedisplay();
+    }
+    else if (key == 'd') {
+
+    }
 }
 
 // Key of ASCII code released
