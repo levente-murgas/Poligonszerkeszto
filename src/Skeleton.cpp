@@ -97,8 +97,29 @@ public:
     void AddPoint(float cX, float cY) {
         vec4 wVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
         wPoints.push_back(vec2(wVertex.x,wVertex.y));
-        ts.push_back((float)wPoints.size() - 1);
+        ts.push_back((float)wPoints.size() - 1.0f);
         printf("Coordinates of %zu. point: x: %f y: %f\n", wPoints.size(),wVertex.x,wVertex.y);
+    }
+
+
+    void AddAssistPointToEnd(vec2 wVertex){
+        wPoints.push_back(vec2(wVertex.x,wVertex.y));
+        ts.push_back((float)wPoints.size() - 1.0f);
+    }
+
+    void AddAssistPointToBegin(vec2 wVertex){
+        wPoints.insert(wPoints.begin(), vec2(wVertex.x, wVertex.y));
+        ts.push_back((float)wPoints.size() - 1.0f);
+    }
+
+    void RemoveAssistPointFromEnd(){
+        wPoints.pop_back();
+        ts.pop_back();
+    }
+
+    void RemoveAssistPointFromBegin(){
+        wPoints.erase(wPoints.begin());
+        ts.erase(ts.begin());
     }
 
     vec4 lerp(const vec4& p, const vec4& q, float t) {
@@ -133,7 +154,7 @@ public:
                 }
             }
             wPoints.insert(wPoints.begin() + pos + 1, vec2(wVertex.x, wVertex.y));
-            ts.insert(ts.begin() + pos + 1,(float)(pos + 1));
+            ts.push_back((float)wPoints.size() - 1.0f);
             printf("distance = %f \n", distance);
             printf("The closest point on the segment was at x: %f y: %f\n",closestOnSegment.x,closestOnSegment.y);
 
@@ -155,39 +176,40 @@ public:
     float tension = -1;
 
     vec2 r(float t){
-        if(t <= ts[ts.size() - 1]) {
-            for (int i = 0; i < wPoints.size() - 1; i++) {
-                if (ts[i] <= t && t <= ts[i + 1]) {
-                    vec2 vPrev = (i > 0) ? (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1])) : (wPoints[i] - wPoints[wPoints.size() - 1]) * (1.0f / (ts[i] - ts[wPoints.size() - 1]));
-                    vec2 vCur = (wPoints[i + 1] - wPoints[i]) / (ts[i + 1] - ts[i]);
-                    vec2 vNext = (i < wPoints.size() - 2) ? (wPoints[i + 2] - wPoints[i + 1]) / (ts[i + 2] - ts[i + 1]) : (wPoints[0] - wPoints[i + 1]) / (float)ts.size() - ts[i + 1];
-                    vec2 v0 = (vPrev + vCur) * (float) ((1 - tension) / 2);
-                    vec2 v1 = (vCur + vNext) * (float) ((1 - tension) / 2);
-                    return Hermite(wPoints[i], v0, ts[i], wPoints[i + 1], v1, ts[i + 1], t);
-                }
+        for (int i = 2; i < wPoints.size() - 2; i++) {
+            if (ts[i] <= t && t <= ts[i + 1]) {
+                vec2 vPrev = (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1]));
+                vec2 vCur = (wPoints[i + 1] - wPoints[i]) / (ts[i + 1] - ts[i]);
+                vec2 vNext = (wPoints[i + 2] - wPoints[i + 1]) / (ts[i + 2] - ts[i + 1]);
+                vec2 v0 = (vPrev + vCur) * (float) ((1.0f - tension) / 2.0f);
+                vec2 v1 = (vCur + vNext) * (float) ((1.0f - tension) / 2.0f);
+                return Hermite(wPoints[i], v0, ts[i], wPoints[i + 1], v1, ts[i + 1], t);
             }
         }
-        else {
-            int i = wPoints.size() - 1;
-            vec2 vPrev = (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1]));
-            vec2 vCur = (wPoints[0] - wPoints[i]) / ((float)ts.size()  - ts[i]);
-            vec2 vNext = (wPoints[1] - wPoints[0]) / (ts[1] - (float)ts.size());
-            vec2 v0 = (vPrev + vCur) * (float) ((1 - tension) / 2);
-            vec2 v1 = (vCur + vNext) * (float) ((1 - tension) / 2);
-            return Hermite(wPoints[i], v0, ts[i], wPoints[0], v1, (float)ts.size(), t);
-        }
+        return wPoints[0];
     }
 
     void CatmullRom(){
         if(wPoints.size() >= 4) {
+            AddAssistPointToEnd(wPoints[0]);
+            AddAssistPointToEnd(wPoints[1]);
+            AddAssistPointToBegin(wPoints[wPoints.size() - 2]);
+            AddAssistPointToBegin(wPoints[wPoints.size() - 1]);
             std::vector<vec2> vertexData;
             std::vector<float> knots;
-            for (int i = 0; i < ts.size(); i++) {
-                float t = (i < ts.size() - 1) ? (ts[i] + ts[i + 1]) / 2 : (ts[i] + (float)ts.size()) / 2;
+            for (int i = 2; i < ts.size() - 2; i++) {
+                float t = (ts[i] + ts[i + 1]) / 2;
                 vec2 wVertex = r(t);
                 vertexData.push_back(wVertex);
                 knots.push_back(t);
             }
+            //
+            // itt vedd ki a segédpontokat
+            //
+            RemoveAssistPointFromBegin();
+            RemoveAssistPointFromBegin();
+            RemoveAssistPointFromEnd();
+            RemoveAssistPointFromEnd();
             for (int i = 0; i < vertexData.size(); i++) {
                 for (int j = 0; j < wPoints.size() - 1; j++) {
                     if (ts[j] < knots[i] && knots[i] <= ts[j + 1]) {
@@ -198,6 +220,8 @@ public:
             }
             wPoints.push_back(vertexData[vertexData.size() - 1]);
             ts.push_back(knots[knots.size() - 1]);
+
+
         }
     }
 
