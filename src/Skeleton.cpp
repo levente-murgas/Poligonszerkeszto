@@ -97,7 +97,7 @@ public:
     void AddPoint(float cX, float cY) {
         vec4 wVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
         wPoints.push_back(vec2(wVertex.x,wVertex.y));
-        ts.push_back((float)wPoints.size());
+        ts.push_back((float)wPoints.size() - 1);
         printf("Coordinates of %zu. point: x: %f y: %f\n", wPoints.size(),wVertex.x,wVertex.y);
     }
 
@@ -152,34 +152,52 @@ public:
         return ((a3 * t + a2) * t + a1) * t + a0;
     }
 
-    float tStart(){ return ts[0]; }
-    float tEnd(){ return ts[wPoints.size() - 1]; }
-
     float tension = -1;
 
     vec2 r(float t){
-        for (int i = 0; i < wPoints.size() - 1; i++){
-            if(ts[i] <= t && t <= ts[i + 1]){
-                vec2 vPrev = (i > 0) ? (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1])) : (wPoints[i] - wPoints[wPoints.size() - 1]) * (1.0f / (ts[i] - ts[wPoints.size() - 1]));
-                vec2 vCur = (wPoints[i + 1] - wPoints[i]) / (ts[i + 1] - ts[i]);
-                vec2 vNext = (i < wPoints.size() - 2) ? (wPoints[i + 2] - wPoints[i + 1]) / (ts[i + 2] - ts[i + 1]) : (wPoints[0] - wPoints[i + 1]) / ts[0] - ts[i + 1];
-                vec2 v0 = (vPrev + vCur) * (float)((1 - tension) / 2);
-                vec2 v1 = (vCur + vNext) * (float)((1 - tension) / 2);
-                return Hermite(wPoints[i], v0, ts[i], wPoints[i + 1], v1, ts[i + 1], t);
+        if(t <= ts[ts.size() - 1]) {
+            for (int i = 0; i < wPoints.size() - 1; i++) {
+                if (ts[i] <= t && t <= ts[i + 1]) {
+                    vec2 vPrev = (i > 0) ? (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1])) : (wPoints[i] - wPoints[wPoints.size() - 1]) * (1.0f / (ts[i] - ts[wPoints.size() - 1]));
+                    vec2 vCur = (wPoints[i + 1] - wPoints[i]) / (ts[i + 1] - ts[i]);
+                    vec2 vNext = (i < wPoints.size() - 2) ? (wPoints[i + 2] - wPoints[i + 1]) / (ts[i + 2] - ts[i + 1]) : (wPoints[0] - wPoints[i + 1]) / (float)ts.size() - ts[i + 1];
+                    vec2 v0 = (vPrev + vCur) * (float) ((1 - tension) / 2);
+                    vec2 v1 = (vCur + vNext) * (float) ((1 - tension) / 2);
+                    return Hermite(wPoints[i], v0, ts[i], wPoints[i + 1], v1, ts[i + 1], t);
+                }
             }
         }
-        return wPoints[0];
+        else {
+            int i = wPoints.size() - 1;
+            vec2 vPrev = (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1]));
+            vec2 vCur = (wPoints[0] - wPoints[i]) / ((float)ts.size()  - ts[i]);
+            vec2 vNext = (wPoints[1] - wPoints[0]) / (ts[1] - (float)ts.size());
+            vec2 v0 = (vPrev + vCur) * (float) ((1 - tension) / 2);
+            vec2 v1 = (vCur + vNext) * (float) ((1 - tension) / 2);
+            return Hermite(wPoints[i], v0, ts[i], wPoints[0], v1, (float)ts.size(), t);
+        }
     }
 
     void CatmullRom(){
-        if(wPoints.size() >= 2){
+        if(wPoints.size() >= 4) {
             std::vector<vec2> vertexData;
-            for(int i = 0; i < nTesselatedVertices; i++) {
-                float tNormalized = (float)i / (nTesselatedVertices - 1);
-                float t = tStart() + (tEnd() - tStart()) * tNormalized;
+            std::vector<float> knots;
+            for (int i = 0; i < ts.size(); i++) {
+                float t = (i < ts.size() - 1) ? (ts[i] + ts[i + 1]) / 2 : (ts[i] + (float)ts.size()) / 2;
                 vec2 wVertex = r(t);
                 vertexData.push_back(wVertex);
+                knots.push_back(t);
             }
+            for (int i = 0; i < vertexData.size(); i++) {
+                for (int j = 0; j < wPoints.size() - 1; j++) {
+                    if (ts[j] < knots[i] && knots[i] <= ts[j + 1]) {
+                        wPoints.insert(wPoints.begin() + j + 1, vertexData[i]);
+                        ts.insert(ts.begin() + j + 1, knots[i]);
+                    }
+                }
+            }
+            wPoints.push_back(vertexData[vertexData.size() - 1]);
+            ts.push_back(knots[knots.size() - 1]);
         }
     }
 
