@@ -99,7 +99,7 @@ public:
         vec4 wVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
         wPoints.push_back(vec2(wVertex.x,wVertex.y));
         ts.push_back((float)wPoints.size() - 1.0f);
-        printf("Coordinates of %zu. point: x: %f y: %f\n", wPoints.size(),wVertex.x,wVertex.y);
+        //printf("Coordinates of %zu. point: x: %f y: %f\n", wPoints.size(),wVertex.x,wVertex.y);
     }
 
 
@@ -107,33 +107,38 @@ public:
         return p * (1 - t) + q * t;
     }
 
-    int AddMovingPoint(float cX, float cY){
+    int FindShortestDistPointIndex(vec2 wVertex){
         int N = wPoints.size();
-        if(N >= 2) {
+        int p = 0;
+        float shortest = 999;
+        float dist;
+        for (int i = 0; i < N; ++i){
+            vec2 A = wPoints[i];
+            vec2 B = wPoints[(N + i + 1) % N];
+            vec2 AB = B - A;
+            vec2 AP = wVertex - A;
+            vec2 BP = wVertex - B;
+            if (dot(AB,BP) > 0)
+                dist = length(BP);
+            else if (dot(AB,AP) < 0)
+                dist = length(AP);
+            else {
+                float mod = dot(AB, AB);
+                dist = fabs(AB.x * AP.y - AB.y * AP.x) / mod;
+            }
+            if (dist < shortest) {
+                shortest = dist;
+                p = i;
+            }
+        }
+        return p;
+    }
+
+    int AddMovingPoint(float cX, float cY){
+        if(wPoints.size() >= 2) {
             vec4 hVertex = vec4(cX, cY, 0, 1) * camera.Pinv() * camera.Vinv();
             vec2 wVertex = vec2(hVertex.x, hVertex.y);
-            int p = 0;
-            float shortest = 999;
-            float dist;
-            for (int i = 0; i < N; ++i){
-                vec2 A = wPoints[i];
-                vec2 B = wPoints[(N + i + 1) % N];
-                vec2 AB = B - A;
-                vec2 AP = wVertex - A;
-                vec2 BP = wVertex - B;
-                if (dot(AB,BP) > 0)
-                    dist = length(BP);
-                else if (dot(AB,AP) < 0)
-                    dist = length(AP);
-                else {
-                    float mod = dot(AB, AB);
-                    dist = fabs(AB.x * AP.y - AB.y * AP.x) / mod;
-                }
-                if (dist < shortest) {
-                    shortest = dist;
-                    p = i;
-                }
-            }
+            int p = FindShortestDistPointIndex(wVertex);
             wPoints.insert(wPoints.begin() + p + 1,wVertex);
             return p + 1;
 
@@ -166,7 +171,7 @@ public:
                 return pos;
             }*/
         }
-            /*
+        /*
                 vec4 p1 = vec4(wPoints[p].x, wPoints[p].y,0,1);
                 //if p is the last we loop back to the first point with modulo size
                 vec4 p2 = vec4(wPoints[(p + 1) % wPoints.size()].x, wPoints[(p + 1) % wPoints.size()].y,0,1);
@@ -190,6 +195,57 @@ public:
             printf("distance = %f \n", distance);
             printf("The closest point on the segment was at x: %f y: %f\n",closestOnSegment.x,closestOnSegment.y);
 */
+    }
+
+    void HalvePoints(){
+        int N = wPoints.size();
+        std::vector<vec2> wPoints_new;
+        std::vector<float> distances;
+        float dist;
+        for (int i = 0; i < N; i++) {
+            vec2 A = wPoints[i];
+            vec2 P = wPoints[(i + 1) % N];
+            vec2 B = wPoints[(i + 2) % N];
+            vec2 AB = B - A;
+            vec2 AP = P - A;
+            vec2 BP = P - B;
+            if (dot(AB,BP) > 0)
+                dist = length(BP);
+            else if (dot(AB,AP) < 0)
+                dist = length(AP);
+            else {
+                float mod = dot(AB, AB);
+                dist = fabs(AB.x * AP.y - AB.y * AP.x) / mod;
+            }
+            if(!distances.empty()) {
+                boolean smallest = true;
+                for(int j = 0; j < distances.size(); j++) {
+                    if(dist > distances[j]){
+                        distances.insert(distances.begin() + j,dist);
+                        wPoints_new.insert(wPoints_new.begin() + j,P);
+                        smallest = false;
+                        break;
+                    }
+                }
+                if(smallest) {
+                    distances.emplace_back(dist);
+                    wPoints_new.emplace_back(P);
+                }
+            }
+            else {
+                distances.emplace_back(dist);
+                wPoints_new.emplace_back(P);
+            }
+        }
+        wPoints_new.erase(wPoints_new.begin(),wPoints_new.begin() + N/2);
+        for(int i = 0; i < wPoints_new.size(); i++){
+            for(int j = 0; j < wPoints.size(); j++){
+                if(wPoints_new[i].x == wPoints[j].x && wPoints_new[i].y == wPoints[j].y){
+                    wPoints.erase(wPoints.begin() + j);
+                    break;
+                }
+            }
+        }
     }
 
     vec2 Hermite(vec2 p0, vec2 v0, float t0, vec2 p1, vec2 v1, float t1, float t){
