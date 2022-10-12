@@ -218,7 +218,7 @@ public:
                 dist = fabs(AB.x * AP.y - AB.y * AP.x) / mod;
             }
             if(!distances.empty()) {
-                boolean smallest = true;
+                bool smallest = true;
                 for(int j = 0; j < distances.size(); j++) {
                     if(dist > distances[j]){
                         distances.insert(distances.begin() + j,dist);
