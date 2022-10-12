@@ -84,6 +84,7 @@ class MyPolygon {
 protected:
     std::vector<vec2> wPoints;
     std::vector<float> ts; //knots
+    float tension = -1;
 public:
     void create(){
         glGenVertexArrays(1,&vaoPoints);
@@ -102,39 +103,70 @@ public:
     }
 
 
-    void AddAssistPointToEnd(vec2 wVertex){
-        wPoints.push_back(vec2(wVertex.x,wVertex.y));
-        ts.push_back((float)wPoints.size() - 1.0f);
-    }
-
-    void AddAssistPointToBegin(vec2 wVertex){
-        wPoints.insert(wPoints.begin(), vec2(wVertex.x, wVertex.y));
-        ts.push_back((float)wPoints.size() - 1.0f);
-    }
-
-    void RemoveAssistPointFromEnd(){
-        wPoints.pop_back();
-        ts.pop_back();
-    }
-
-    void RemoveAssistPointFromBegin(){
-        wPoints.erase(wPoints.begin());
-        ts.erase(ts.begin());
-    }
-
     vec4 lerp(const vec4& p, const vec4& q, float t) {
         return p * (1 - t) + q * t;
     }
 
     int AddMovingPoint(float cX, float cY){
-        unsigned int pos = -1;
-        if(wPoints.size() >= 2) {
+        int N = wPoints.size();
+        if(N >= 2) {
             vec4 hVertex = vec4(cX, cY, 0, 1) * camera.Pinv() * camera.Vinv();
             vec2 wVertex = vec2(hVertex.x, hVertex.y);
-            float shortest;
-            float distance;
+            int p = 0;
+            float shortest = 999;
+            float dist;
+            for (int i = 0; i < N; ++i){
+                vec2 A = wPoints[i];
+                vec2 B = wPoints[(N + i + 1) % N];
+                vec2 AB = B - A;
+                vec2 AP = wVertex - A;
+                vec2 BP = wVertex - B;
+                if (dot(AB,BP) > 0)
+                    dist = length(BP);
+                else if (dot(AB,AP) < 0)
+                    dist = length(AP);
+                else {
+                    float mod = dot(AB, AB);
+                    dist = fabs(AB.x * AP.y - AB.y * AP.x) / mod;
+                }
+                if (dist < shortest) {
+                    shortest = dist;
+                    p = i;
+                }
+            }
+            wPoints.insert(wPoints.begin() + p + 1,wVertex);
+            return p + 1;
+
+            /*float shortest;
+            unsigned int pos = 0;
+            float distance = shortest = dot(wPoints[0]-wVertex, wPoints[0]-wVertex);
             vec4 closestOnSegment;
-            for (unsigned int p = 0; p < wPoints.size(); p++) {
+            for (unsigned int p = 1; p < N; p++) {
+                distance = dot(wPoints[p]-wVertex, wPoints[p]-wVertex);
+                if (distance < shortest) {
+                    shortest = distance;
+                    pos = p;
+                }
+            }
+            vec2 A = wPoints[pos];
+            vec2 B = wPoints[(N + pos + 1) % N];
+            vec2 C = wPoints[(N + pos - 1) % N];
+            vec2 AB = normalize((B - A));
+            vec2 AC = normalize((C - A));
+            vec2 AP = normalize((wVertex - A));
+            printf("AP: %lf, %lf\n", AP.x, AP.y);
+            printf("AB: %lf, %lf - %lf\n", AB.x, AB.y, dot(AB,AP));
+            printf("AC: %lf, %lf - %lf\n", AC.x, AC.y, dot(AC,AP));
+            if(dot(AC,AP) < dot(AB,AP)){
+                wPoints.insert(wPoints.begin() + pos + 1,wVertex);
+                return pos + 1;
+            }
+            else{
+                wPoints.insert(wPoints.begin() + pos, wVertex);
+                return pos;
+            }*/
+        }
+            /*
                 vec4 p1 = vec4(wPoints[p].x, wPoints[p].y,0,1);
                 //if p is the last we loop back to the first point with modulo size
                 vec4 p2 = vec4(wPoints[(p + 1) % wPoints.size()].x, wPoints[(p + 1) % wPoints.size()].y,0,1);
@@ -146,20 +178,18 @@ public:
                     if(p == 0 && i == 0){ //give shortest a starting value
                         shortest = distance;
                     }
-                    if (distance < shortest) {
+                    if (distance <= shortest) {
                         shortest = distance;
                         pos = p;
                         closestOnSegment = car;
                     }
-                }
+
             }
             wPoints.insert(wPoints.begin() + pos + 1, vec2(wVertex.x, wVertex.y));
             ts.push_back((float)wPoints.size() - 1.0f);
             printf("distance = %f \n", distance);
             printf("The closest point on the segment was at x: %f y: %f\n",closestOnSegment.x,closestOnSegment.y);
-
-        }
-        return pos + 1;
+*/
     }
 
     vec2 Hermite(vec2 p0, vec2 v0, float t0, vec2 p1, vec2 v1, float t1, float t){
@@ -173,56 +203,43 @@ public:
         return ((a3 * t + a2) * t + a1) * t + a0;
     }
 
-    float tension = -1;
-
-    vec2 r(float t){
-        for (int i = 2; i < wPoints.size() - 2; i++) {
-            if (ts[i] <= t && t <= ts[i + 1]) {
-                vec2 vPrev = (wPoints[i] - wPoints[i - 1]) * (1.0f / (ts[i] - ts[i - 1]));
-                vec2 vCur = (wPoints[i + 1] - wPoints[i]) / (ts[i + 1] - ts[i]);
-                vec2 vNext = (wPoints[i + 2] - wPoints[i + 1]) / (ts[i + 2] - ts[i + 1]);
-                vec2 v0 = (vPrev + vCur) * (float) ((1.0f - tension) / 2.0f);
-                vec2 v1 = (vCur + vNext) * (float) ((1.0f - tension) / 2.0f);
-                return Hermite(wPoints[i], v0, ts[i], wPoints[i + 1], v1, ts[i + 1], t);
-            }
+    void CatmullRom() {
+        std::vector<vec2> wPoints_new;
+        int N = wPoints.size();
+        for (int i = 0; i < N; ++i) {
+            wPoints_new.emplace_back(wPoints[(N + i + 1) % N]);
+            vec2 A = (wPoints[(N + i + 1) % N] - wPoints[(N + i + 0) % N]) / (i + 1 - i + 0);
+            vec2 B = (wPoints[(N + i + 2) % N] - wPoints[(N + i + 1) % N]) / (i + 2 - i + 1);
+            vec2 C = (wPoints[(N + i + 3) % N] - wPoints[(N + i + 2) % N]) / (i + 3 - i + 2);
+            vec2 v0 = (A + B) * (float) ((1.0f - tension) / 2.0f);
+            vec2 v1 = (B + C) * (float) ((1.0f - tension) / 2.0f);
+            wPoints_new.emplace_back(Hermite(wPoints[(N + i + 1) % N], v0, i + 1, wPoints[(N + i + 2) % N], v1, i + 2, i + 1.5));
         }
-        return wPoints[0];
+        wPoints = wPoints_new;
     }
 
-    void CatmullRom(){
-        if(wPoints.size() >= 4) {
-            AddAssistPointToEnd(wPoints[0]);
-            AddAssistPointToEnd(wPoints[1]);
-            AddAssistPointToBegin(wPoints[wPoints.size() - 2]);
-            AddAssistPointToBegin(wPoints[wPoints.size() - 1]);
-            std::vector<vec2> vertexData;
-            std::vector<float> knots;
-            for (int i = 2; i < ts.size() - 2; i++) {
-                float t = (ts[i] + ts[i + 1]) / 2;
-                vec2 wVertex = r(t);
-                vertexData.push_back(wVertex);
-                knots.push_back(t);
-            }
-            //
-            // itt vedd ki a segédpontokat
-            //
-            RemoveAssistPointFromBegin();
-            RemoveAssistPointFromBegin();
-            RemoveAssistPointFromEnd();
-            RemoveAssistPointFromEnd();
-            for (int i = 0; i < vertexData.size(); i++) {
-                for (int j = 0; j < wPoints.size() - 1; j++) {
-                    if (ts[j] < knots[i] && knots[i] <= ts[j + 1]) {
-                        wPoints.insert(wPoints.begin() + j + 1, vertexData[i]);
-                        ts.insert(ts.begin() + j + 1, knots[i]);
-                    }
-                }
-            }
-            wPoints.push_back(vertexData[vertexData.size() - 1]);
-            ts.push_back(knots[knots.size() - 1]);
-
-
+    void CR_spline() {
+        int N = wPoints.size();
+        std::vector<vec2> CR;
+        for (int i = 0; i < N; ++i) {
+            vec2 A = (wPoints[(N + i + 1) % N] - wPoints[(N + i + 0) % N]) / (i + 1 - i + 0);
+            vec2 B = (wPoints[(N + i + 2) % N] - wPoints[(N + i + 1) % N]) / (i + 2 - i + 1);
+            vec2 C = (wPoints[(N + i + 3) % N] - wPoints[(N + i + 2) % N]) / (i + 3 - i + 2);
+            vec2 v0 = (A + B) * (float) ((1.0f - tension) / 2.0f);
+            vec2 v1 = (B + C) * (float) ((1.0f - tension) / 2.0f);
+            for (float t = i + 1; t < i + 2; t += 0.05)
+                CR.emplace_back(Hermite(wPoints[(N + i + 1) % N], v0, i + 1, wPoints[(N + i + 2) % N], v1, i + 2, t));
         }
+        static GLuint vbo = 0;
+        if (vbo == 0)
+            glGenBuffers(1,&vbo);
+        glBindVertexArray(vaoPoints);
+        glBindBuffer(GL_ARRAY_BUFFER,vbo);
+        glBufferData(GL_ARRAY_BUFFER,CR.size() * sizeof(vec2), &CR[0], GL_DYNAMIC_DRAW);
+        gpuProgram.setUniform(vec3(0,0.5,1),"color");
+
+        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
+        glDrawArrays(GL_LINE_STRIP,0,CR.size());
     }
 
     void MovePoint(int movingPoint, float cX, float cY){
@@ -231,11 +248,13 @@ public:
     }
 
     void Draw(){
+       // CR_spline();
         mat4 VPTransform = camera.V() * camera.P();
         gpuProgram.setUniform(VPTransform, "MVP");
 
         glBindVertexArray(vaoPoints);
         glBindBuffer(GL_ARRAY_BUFFER,vboPoints);
+        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
         glBufferData(GL_ARRAY_BUFFER,wPoints.size() * sizeof(vec2), &wPoints[0], GL_DYNAMIC_DRAW);
 
         if(wPoints.size() >= 2){
@@ -281,7 +300,8 @@ void onKeyboard(unsigned char key, int pX, int pY) {
         glutPostRedisplay();
     }
     else if (key == 'd') {
-
+        polygon.HalvePoints();
+        glutPostRedisplay();
     }
 }
 
