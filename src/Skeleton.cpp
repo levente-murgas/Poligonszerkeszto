@@ -113,13 +113,19 @@ public:
             vec2 AB = B - A;
             vec2 AP = wVertex - A;
             vec2 BP = wVertex - B;
-            if (dot(AB,BP) > 0)
+
+            float projection = dot(AP,AB);
+            float mod = dot(AB, AB);
+            float d = projection / mod;
+
+            if (d >= 1)
                 dist = length(BP);
-            else if (dot(AB,AP) < 0)
+            else if (d <= 0)
                 dist = length(AP);
             else {
-                float mod = dot(AB, AB);
-                dist = fabs(AB.x * AP.y - AB.y * AP.x) / mod;
+                vec2 perpPoint = A + AB * d;
+                vec2 ppP = wVertex - perpPoint;
+                dist = length(ppP);
             }
             if (dist < shortest) {
                 shortest = dist;
@@ -151,13 +157,19 @@ public:
             vec2 AB = B - A;
             vec2 AP = P - A;
             vec2 BP = P - B;
-            if (dot(AB,BP) > 0)
+
+            float projection = dot(AP,AB);
+            float mod = dot(AB, AB);
+            float d = projection / mod;
+
+            if (d >= 1)
                 dist = length(BP);
-            else if (dot(AB,AP) < 0)
+            else if (d <= 0)
                 dist = length(AP);
             else {
-                float mod = dot(AB, AB);
-                dist = fabs(AB.x * AP.y - AB.y * AP.x) / mod;
+                vec2 perpPoint = A + AB * d;
+                vec2 ppP = P - perpPoint;
+                dist = length(ppP);
             }
             if(!distances.empty()) {
                 bool smallest = true;
