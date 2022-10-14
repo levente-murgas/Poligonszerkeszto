@@ -77,13 +77,11 @@ public:
 };
 Camera2D camera;		// 2D camera
 GPUProgram gpuProgram; // vertex and fragment shaders
-const int nTesselatedVertices = 100;
 
 class MyPolygon {
     unsigned int vaoPoints, vboPoints;
 protected:
     std::vector<vec2> wPoints;
-    std::vector<float> ts; //knots
     float tension = -1;
 public:
     void create(){
@@ -98,10 +96,7 @@ public:
     void AddPoint(float cX, float cY) {
         vec4 wVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
         wPoints.push_back(vec2(wVertex.x,wVertex.y));
-        ts.push_back((float)wPoints.size() - 1.0f);
-        //printf("Coordinates of %zu. point: x: %f y: %f\n", wPoints.size(),wVertex.x,wVertex.y);
     }
-
 
     vec4 lerp(const vec4& p, const vec4& q, float t) {
         return p * (1 - t) + q * t;
@@ -139,62 +134,9 @@ public:
             vec4 hVertex = vec4(cX, cY, 0, 1) * camera.Pinv() * camera.Vinv();
             vec2 wVertex = vec2(hVertex.x, hVertex.y);
             int p = FindShortestDistPointIndex(wVertex);
-            wPoints.insert(wPoints.begin() + p + 1,wVertex);
+            wPoints.insert(wPoints.begin() + p + 1, wVertex);
             return p + 1;
-
-            /*float shortest;
-            unsigned int pos = 0;
-            float distance = shortest = dot(wPoints[0]-wVertex, wPoints[0]-wVertex);
-            vec4 closestOnSegment;
-            for (unsigned int p = 1; p < N; p++) {
-                distance = dot(wPoints[p]-wVertex, wPoints[p]-wVertex);
-                if (distance < shortest) {
-                    shortest = distance;
-                    pos = p;
-                }
-            }
-            vec2 A = wPoints[pos];
-            vec2 B = wPoints[(N + pos + 1) % N];
-            vec2 C = wPoints[(N + pos - 1) % N];
-            vec2 AB = normalize((B - A));
-            vec2 AC = normalize((C - A));
-            vec2 AP = normalize((wVertex - A));
-            printf("AP: %lf, %lf\n", AP.x, AP.y);
-            printf("AB: %lf, %lf - %lf\n", AB.x, AB.y, dot(AB,AP));
-            printf("AC: %lf, %lf - %lf\n", AC.x, AC.y, dot(AC,AP));
-            if(dot(AC,AP) < dot(AB,AP)){
-                wPoints.insert(wPoints.begin() + pos + 1,wVertex);
-                return pos + 1;
-            }
-            else{
-                wPoints.insert(wPoints.begin() + pos, wVertex);
-                return pos;
-            }*/
         }
-        /*
-                vec4 p1 = vec4(wPoints[p].x, wPoints[p].y,0,1);
-                //if p is the last we loop back to the first point with modulo size
-                vec4 p2 = vec4(wPoints[(p + 1) % wPoints.size()].x, wPoints[(p + 1) % wPoints.size()].y,0,1);
-                //distance of wVertex from segment
-                for(int i = 0; i < 1000; i++){
-                    float t = i / (1000 - 1.0f);
-                    vec4 car = lerp(p1,p2,t);
-                    distance = sqrt(dot(car - hVertex, car - hVertex));
-                    if(p == 0 && i == 0){ //give shortest a starting value
-                        shortest = distance;
-                    }
-                    if (distance <= shortest) {
-                        shortest = distance;
-                        pos = p;
-                        closestOnSegment = car;
-                    }
-
-            }
-            wPoints.insert(wPoints.begin() + pos + 1, vec2(wVertex.x, wVertex.y));
-            ts.push_back((float)wPoints.size() - 1.0f);
-            printf("distance = %f \n", distance);
-            printf("The closest point on the segment was at x: %f y: %f\n",closestOnSegment.x,closestOnSegment.y);
-*/
     }
 
     void HalvePoints(){
