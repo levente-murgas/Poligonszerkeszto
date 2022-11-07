@@ -297,6 +297,38 @@ struct Icosahedron : public Intersectable , public PlatonicSolid{
     }
 };
 
+struct Cone : public Intersectable {
+    vec3 p;
+    vec3 n;
+    float cosa;
+
+    Cone(vec3 _p, vec3 _n, float _cosa, Material* _material) {
+        p = _p;
+        n = _n;
+        cosa = _cosa;
+        material = _material;
+    }
+public:
+    Hit intersect(const Ray& ray) {
+        Hit hit;
+        vec3 x = ray.start - p;
+        float a = powf(dot(ray.dir,n),2) - dot(ray.dir,ray.dir) * powf(cosa,2);
+        float b = 2 * dot(ray.dir,n) * dot(x,n) - 2 * dot(ray.dir,x) * powf(cosa,2);
+        float c = powf(dot(x,n),2) + dot(x,x) * powf(cosa,2);
+        float discr = b * b - 4.0f * a * c;
+        if (discr < 0) return hit;
+        float sqrt_discr = sqrtf(discr);
+        float t1 = (-b + sqrt_discr) / 2.0f / a;	// t1 >= t2 for sure
+        float t2 = (-b - sqrt_discr) / 2.0f / a;
+        if (t1 <= 0) return hit;
+        hit.t = (t2 > 0) ? t2 : t1;
+        hit.position = ray.start + ray.dir * hit.t;
+        hit.normal = 2 * dot(((ray.dir * hit.t) + x),n) * n - 2 * ((ray.dir * hit.t) + x) * powf(cosa,2);
+        hit.material = material;
+        return hit;
+    }
+};
+
 struct Camera {
     vec3 eye, lookat, right, up;
     float fov;
@@ -447,6 +479,8 @@ public:
         std::vector<Icosahedron::face3> icosahedronFaces(icosahedronFaceArr, icosahedronFaceArr + 20);
         i = new Icosahedron(icosahedronVertices, icosahedronFaces, ceramicPink);
         objects.push_back(i);
+
+        objects.push_back(new Cone(vec3(0,1,0),normalize(vec3(1,0,1)),0.8660,ceramicPink));
     }
 
     void moveObj(char key, bool dodecahedron){
