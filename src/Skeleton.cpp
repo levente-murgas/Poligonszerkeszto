@@ -81,6 +81,75 @@ public:
     virtual Hit intersect(const Ray& ray) = 0;
 };
 
+class PlatonicSolid {
+protected:
+    std::vector<vec3> vertices;
+public:
+    PlatonicSolid(const std::vector<vec3>& _vertices) {
+        vertices = _vertices;
+    }
+    void move(char dir){
+        printf("----------------------------------------\n");
+        switch(dir){
+            case 'w':
+                for(int i = 0; i < vertices.size(); i++){
+                    vertices[i].y = vertices[i].y + 0.05;
+                    printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+                }
+                break;
+            case 's':
+                for(int i = 0; i < vertices.size(); i++){
+                     vertices[i].y = vertices[i].y - 0.05;
+                    printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+                }
+                break;
+            case 'a':
+                for(int i = 0; i < vertices.size(); i++){
+                     vertices[i].x = vertices[i].x - 0.05;
+                    printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+                }
+                break;
+            case 'd':
+
+                for(int i = 0; i < vertices.size(); i++){
+                     vertices[i].x = vertices[i].x + 0.05;
+                    printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+                }
+                break;
+
+            case 'x':
+                for(int i = 0; i < vertices.size(); i++){
+                     vertices[i].z = vertices[i].z + 0.05;
+                    printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+                }
+                break;
+
+            case 'y':
+                for(int i = 0; i < vertices.size(); i++){
+                     vertices[i].z = vertices[i].z - 0.05;
+                    printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+                }
+                break;
+        }
+    }
+
+    void scaleDown(){
+        printf("----------------------------------------\n");
+        for(int i = 0; i < vertices.size(); i++){
+            vertices[i] = vertices[i] * 0.2;
+            printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+        }
+    }
+
+    void scaleUp(){
+        printf("----------------------------------------\n");
+        for(int i = 0; i < vertices.size(); i++){
+            vertices[i] = vertices[i] * 1.2;
+            printf("vec3(%.4f,%.4f,%.4f),\n",vertices[i].x,vertices[i].y,vertices[i].z);
+        }
+    }
+};
+
 struct Cube : public Intersectable {
     struct face4 {
         unsigned int i, j, k, l;
@@ -131,19 +200,16 @@ struct Cube : public Intersectable {
     }
 };
 
-struct Dodecahedron : public Intersectable {
+struct Dodecahedron : public Intersectable, public PlatonicSolid {
     struct face5 {
         unsigned int i, j, k, l, m;
         face5(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0, unsigned int _l = 0, unsigned int _m = 0)
                 : i(_i - 1), j(_j - 1), k(_k - 1), l(_l - 1), m(_m - 1) {}
     };
 
-    std::vector<vec3> vertices;
     std::vector<face5> faces;
-    Material* materialRefl;
 
-    Dodecahedron(const std::vector<vec3>& _vertices, const std::vector<face5>& _faces, Material* _material) {
-        vertices = _vertices;
+    Dodecahedron(const std::vector<vec3>& _vertices, const std::vector<face5>& _faces, Material* _material) : PlatonicSolid(_vertices) {
         faces = _faces;
         material = _material;
     }
@@ -174,6 +240,52 @@ struct Dodecahedron : public Intersectable {
                 bool b5 = isInside(normal,p,E,A);
 
                 if (b1 && b2 && b3 && b4 && b5) {
+                    hit.t = t;
+                    hit.position = p;
+                    hit.normal = normal;
+                    hit.material = material;
+                }
+            }
+        }
+        return hit;
+    }
+};
+
+struct Icosahedron : public Intersectable , public PlatonicSolid{
+    struct face3 {
+        unsigned int i, j, k;
+        face3(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0)
+                : i(_i - 1), j(_j - 1), k(_k - 1){}
+    };
+    std::vector<face3> faces;
+
+    Icosahedron(const std::vector<vec3>& _vertices, const std::vector<face3>& _faces, Material* _material) : PlatonicSolid(_vertices) {
+        faces = _faces;
+        material = _material;
+    }
+    Hit intersect(const Ray& ray) {
+        Hit hit;
+
+        for (const face3& face: faces) {
+            vec3 p1 = vertices[face.i];
+            vec3 p2 = vertices[face.j];
+            vec3 p3 = vertices[face.k];
+            vec3 u = p2 - p1;
+            vec3 v = p3 - p1;
+            vec3 normal = normalize(cross(u, v));
+            float t = dot(normal,(p1 - ray.start)) / dot(normal, ray.dir);
+
+            if ((t > 0 && hit.t == -1) || (t > 0 && t < hit.t)) { //find the plane that the ray intersects first
+                vec3 p = ray.start + ray.dir * t;
+                vec3 A = vertices[face.i];
+                vec3 B = vertices[face.j];
+                vec3 C = vertices[face.k];
+
+                bool b1 = isInside(normal,p,A,B);
+                bool b2 = isInside(normal,p,B,C);
+                bool b3 = isInside(normal,p,C,A);
+
+                if (b1 && b2 && b3) {
                     hit.t = t;
                     hit.position = p;
                     hit.normal = normal;
@@ -230,6 +342,8 @@ const int maxdepth = 5;
 
 class Scene {
     std::vector<Intersectable*> objects;
+    Dodecahedron* d;
+    Icosahedron* i;
     std::vector<Light*> lights;
     Camera camera;
     vec3 La;
@@ -239,7 +353,6 @@ public:
         vec3 eye = vec3(-0.75, -0.8, 0.5), vup = vec3(0, 0, 1), lookat = vec3(0.5, 0.5, 0.5);
         float fov = 45 * M_PI / 180;
         camera.set(eye, lookat, vup, fov);
-        //camera.Animate(0.885398);
 
         La = vec3(0.2f,0.2f,0.2f);
         Light *redLight = new Light(vec3(0,0.5,0),vec3(1,0,0));
@@ -262,12 +375,28 @@ public:
         objects.push_back(new Cube(cubeVertices,cubeFaces,refractiveAndRoughMaterial));
 
         //init dodecahedron
-        vec3 vertexArr[] = {vec3(0,0.618,1.618), vec3(0,-0.618,1.618),	vec3(0,-0.618,-1.618),	vec3(0,0.618,-1.618),
-                            vec3(1.618,0,0.618), vec3(-1.618,0,0.618),	vec3(-1.618,0,-0.618),	vec3(1.618,0,-0.618),
-                            vec3(0.618,1.618,0), vec3(-0.618,1.618,0),	vec3(-0.618,-1.618,0),	vec3(0.618,-1.618,0),
-                            vec3(1,1,1),		 vec3(-1,1,1),			vec3(-1,-1,1),			vec3(1,-1,1),
-                            vec3(1,-1,-1),		 vec3(1,1,-1),			vec3(-1,1,-1),			vec3(-1,-1,-1) };
+        vec3 vertexArr[] = {vec3(0.2527,0.6011,0.5352),
+                            vec3(0.2527,0.4182,0.5352),
+                            vec3(0.2527,0.4182,0.0566),
+                            vec3(0.2527,0.6011,0.0566),
+                            vec3(0.4920,0.5096,0.3872),
+                            vec3(0.0134,0.5096,0.3872),
+                            vec3(0.0134,0.5096,0.2044),
+                            vec3(0.4920,0.5096,0.2044),
+                            vec3(0.3440,0.7489,0.2959),
+                            vec3(0.1612,0.7489,0.2959),
+                            vec3(0.1612,0.2703,0.2959),
+                            vec3(0.3440,0.2703,0.2959),
+                            vec3(0.4005,0.6575,0.4437),
+                            vec3(0.1047,0.6575,0.4437),
+                            vec3(0.1047,0.3617,0.4437),
+                            vec3(0.4005,0.3617,0.4437),
+                            vec3(0.4005,0.3617,0.1479),
+                            vec3(0.4005,0.6575,0.1479),
+                            vec3(0.1047,0.6575,0.1479),
+                            vec3(0.1047,0.3617,0.1479)};
         std::vector<vec3> vertices(vertexArr, vertexArr + 20);
+
 
         Dodecahedron::face5 faceArr[] = {Dodecahedron::face5(1,2,16,5,13),		Dodecahedron::face5(1,13,9,10,14),
                                          Dodecahedron::face5(1,14,6,15,2),		Dodecahedron::face5(2,15,11,12,16),
@@ -278,7 +407,73 @@ public:
         std::vector<Dodecahedron::face5> faces(faceArr, faceArr + 12);
 
         Material* ceramicPink = new RoughMaterial(vec3(0.3, 0.25, 0.3), vec3(2, 2, 2), 1000);
-        //objects.push_back(new Dodecahedron(vertices, faces, ceramicPink));
+        d = new Dodecahedron(vertices, faces, ceramicPink);
+        objects.push_back(d);
+
+        vec3 icosahedronVertexArr[] = { vec3(0.5472,0.0979,0.3820),
+                                        vec3(0.7228,0.2064,0.3149),
+                                        vec3(0.7228,0.2064,0.0979),
+                                        vec3(0.3716,0.2064,0.0979),
+                                        vec3(0.3716,0.2064,0.3149),
+                                        vec3(0.4387,0.3820,0.2064),
+                                        vec3(0.6557,0.3820,0.2064),
+                                        vec3(0.6557,0.0308,0.2064),
+                                        vec3(0.4387,0.0308,0.2064),
+                                        vec3(0.5472,0.0979,0.0308),
+                                        vec3(0.5472,0.3149,0.0308),
+                                        vec3(0.5472,0.3149,0.3820)};
+        std::vector<vec3> icosahedronVertices(icosahedronVertexArr, icosahedronVertexArr + 12);
+        Icosahedron::face3 icosahedronFaceArr[] = {Icosahedron::face3(2,3,7),
+                                                   Icosahedron::face3(2,8,3),
+                                                   Icosahedron::face3(4,5,6),
+                                                   Icosahedron::face3(5,4,9),
+                                                   Icosahedron::face3(7,6,12),
+                                                   Icosahedron::face3(6,7,11),
+                                                   Icosahedron::face3(10,11,3),
+                                                   Icosahedron::face3(11,10,4),
+                                                   Icosahedron::face3(8,9,10),
+                                                   Icosahedron::face3(9,8,1),
+                                                   Icosahedron::face3(12,1,2),
+                                                   Icosahedron::face3(1,12,5),
+                                                   Icosahedron::face3(7,3,11),
+                                                   Icosahedron::face3(2,7,12),
+                                                   Icosahedron::face3(4,6,11),
+                                                   Icosahedron::face3(6,5,12),
+                                                   Icosahedron::face3(3,8,10),
+                                                   Icosahedron::face3(8,2,1),
+                                                   Icosahedron::face3(4,10,9),
+                                                   Icosahedron::face3(5,9,1)
+                                                   };
+        std::vector<Icosahedron::face3> icosahedronFaces(icosahedronFaceArr, icosahedronFaceArr + 20);
+        i = new Icosahedron(icosahedronVertices, icosahedronFaces, ceramicPink);
+        objects.push_back(i);
+    }
+
+    void moveObj(char key, bool dodecahedron){
+        if(dodecahedron){
+            d->move(key);
+        }
+        else {
+            i->move(key);
+        }
+    }
+
+    void scaleUpObj(bool dodecahedron) {
+        if(dodecahedron) {
+            d->scaleUp();
+        }
+        else {
+            i->scaleUp();
+        }
+    }
+
+    void scaleDownObj(bool dodecahedron) {
+        if(dodecahedron) {
+            d->scaleDown();
+        }
+        else {
+            i->scaleDown();
+        }
     }
 
     void render(std::vector<vec4>& image) {
@@ -443,7 +638,25 @@ void onDisplay() {
     glutSwapBuffers();
 }
 
-void onKeyboard(unsigned char key, int pX, int pY) {}
+bool dodecahedron = true;
+
+void onKeyboard(unsigned char key, int pX, int pY) {
+    if(key == 'v') {
+        dodecahedron = !dodecahedron;
+    }
+    if(key == 'w' || key == 's' || key == 'a' || key == 'd' || key == 'x' || key == 'y'){
+        scene.moveObj(key,dodecahedron);
+        glutPostRedisplay();
+    }
+    if(key == 'u'){
+        scene.scaleUpObj(dodecahedron);
+        glutPostRedisplay();
+    }
+    if(key == 'j'){
+        scene.scaleDownObj(dodecahedron);
+        glutPostRedisplay();
+    }
+}
 void onKeyboardUp(unsigned char key, int pX, int pY) {}
 void onMouse(int button, int state, int pX, int pY) {}
 void onMouseMotion(int pX, int pY) {}
