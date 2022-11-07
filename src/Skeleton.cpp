@@ -298,34 +298,44 @@ struct Icosahedron : public Intersectable , public PlatonicSolid{
 };
 
 struct Cone : public Intersectable {
-    vec3 p;
-    vec3 n;
+    vec3 p; //tip point
+    vec3 n; //cone axis
+    float height;
     float cosa;
 
-    Cone(vec3 _p, vec3 _n, float _cosa, Material* _material) {
+    Cone(vec3 _p, vec3 _n, float _height, float _cosa, Material* _material) {
         p = _p;
         n = _n;
+        height = _height;
         cosa = _cosa;
         material = _material;
     }
 public:
     Hit intersect(const Ray& ray) {
         Hit hit;
-        vec3 x = ray.start - p;
-        float a = powf(dot(ray.dir,n),2) - dot(ray.dir,ray.dir) * powf(cosa,2);
-        float b = 2 * dot(ray.dir,n) * dot(x,n) - 2 * dot(ray.dir,x) * powf(cosa,2);
-        float c = powf(dot(x,n),2) + dot(x,x) * powf(cosa,2);
+        vec3 sp = ray.start - p;
+        float a = dot(ray.dir,n) * dot(ray.dir,n) - cosa * cosa;
+        float b = 2.0f * (dot(ray.dir,n) * dot(sp,n) - dot(ray.dir,sp) * cosa* cosa);
+        float c = dot(sp,n)*dot(sp,n) - dot(sp,sp) * cosa * cosa;
         float discr = b * b - 4.0f * a * c;
-        if (discr < 0) return hit;
+        if (discr < 0.0f) return hit;
         float sqrt_discr = sqrtf(discr);
-        float t1 = (-b + sqrt_discr) / 2.0f / a;	// t1 >= t2 for sure
-        float t2 = (-b - sqrt_discr) / 2.0f / a;
+        float t1 = (-b - sqrt_discr) / 2.0f / a;	// t1 >= t2 for sure
+        float t2 = (-b + sqrt_discr) / 2.0f / a;
+
         if (t1 <= 0) return hit;
-        hit.t = (t2 > 0) ? t2 : t1;
+        float t = (t2 > 0) ? t2 : t1;
+
+        vec3 cp = ray.start + hit.t * ray.dir - p;
+        float h = dot(cp, n);
+        if (h < 0.0f || h > height) return hit;
+
+        hit.t = t;
         hit.position = ray.start + ray.dir * hit.t;
-        hit.normal = 2 * dot(((ray.dir * hit.t) + x),n) * n - 2 * ((ray.dir * hit.t) + x) * powf(cosa,2);
+        hit.normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
         hit.material = material;
         return hit;
+
     }
 };
 
@@ -480,7 +490,7 @@ public:
         i = new Icosahedron(icosahedronVertices, icosahedronFaces, ceramicPink);
         objects.push_back(i);
 
-        objects.push_back(new Cone(vec3(0,1,0),normalize(vec3(1,0,1)),0.8660,ceramicPink));
+        objects.push_back(new Cone(vec3(0,0,0),normalize(vec3(1,0,1)),0.03,0.8660,ceramicPink));
     }
 
     void moveObj(char key, bool dodecahedron){
