@@ -313,11 +313,11 @@ struct Cone : public Intersectable {
 public:
     Hit intersect(const Ray& ray) {
         Hit hit;
-        vec3 co = ray.start - p;
+        vec3 sp = ray.start - p;
 
         float a = dot(ray.dir,n)*dot(ray.dir,n) - cosa*cosa;
-        float b = 2. * (dot(ray.dir,n)*dot(co,n) - dot(ray.dir,co)*cosa*cosa);
-        float c = dot(co,n)*dot(co,n) - dot(co,co)*cosa*cosa;
+        float b = 2. * (dot(ray.dir,n)*dot(sp,n) - dot(ray.dir,sp)*cosa*cosa);
+        float c = dot(sp,n)*dot(sp,n) - dot(sp,sp)*cosa*cosa;
 
         float discr = b * b - 4. * a * c;
         if (discr < 0.) return hit;
@@ -330,7 +330,7 @@ public:
         if (t1 < 0. || t2 > 0. && t2 < t1) t = t2;
         if (t1 < 0.) return hit;
 
-        vec3 cp = ray.start + t*ray.dir - p;
+        vec3 cp = ray.start + t * ray.dir - p;
         float h = dot(cp, n);
         if (h < 0. || h > height) return hit;
 
