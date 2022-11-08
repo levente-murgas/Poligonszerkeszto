@@ -81,11 +81,11 @@ public:
     virtual Hit intersect(const Ray& ray) = 0;
 };
 
-class PlatonicSolid {
+class Moveable {
 protected:
     std::vector<vec3> vertices;
 public:
-    PlatonicSolid(const std::vector<vec3>& _vertices) {
+    Moveable(const std::vector<vec3>& _vertices) {
         vertices = _vertices;
     }
     void move(char dir){
@@ -200,7 +200,7 @@ struct Cube : public Intersectable {
     }
 };
 
-struct Dodecahedron : public Intersectable, public PlatonicSolid {
+struct Dodecahedron : public Intersectable, public Moveable {
     struct face5 {
         unsigned int i, j, k, l, m;
         face5(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0, unsigned int _l = 0, unsigned int _m = 0)
@@ -209,7 +209,7 @@ struct Dodecahedron : public Intersectable, public PlatonicSolid {
 
     std::vector<face5> faces;
 
-    Dodecahedron(const std::vector<vec3>& _vertices, const std::vector<face5>& _faces, Material* _material) : PlatonicSolid(_vertices) {
+    Dodecahedron(const std::vector<vec3>& _vertices, const std::vector<face5>& _faces, Material* _material) : Moveable(_vertices) {
         faces = _faces;
         material = _material;
     }
@@ -251,7 +251,7 @@ struct Dodecahedron : public Intersectable, public PlatonicSolid {
     }
 };
 
-struct Icosahedron : public Intersectable , public PlatonicSolid{
+struct Icosahedron : public Intersectable , public Moveable{
     struct face3 {
         unsigned int i, j, k;
         face3(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0)
@@ -259,7 +259,7 @@ struct Icosahedron : public Intersectable , public PlatonicSolid{
     };
     std::vector<face3> faces;
 
-    Icosahedron(const std::vector<vec3>& _vertices, const std::vector<face3>& _faces, Material* _material) : PlatonicSolid(_vertices) {
+    Icosahedron(const std::vector<vec3>& _vertices, const std::vector<face3>& _faces, Material* _material) : Moveable(_vertices) {
         faces = _faces;
         material = _material;
     }
@@ -374,8 +374,8 @@ public:
 struct Light {
     vec3 position;
     vec3 Le;
-    Light(vec3 _position = vec3(), vec3 _Le = vec3(1, 1, 1)) {
-        position = normalize(_position);
+    Light(vec3 _position = vec3(), vec3 _Le = vec3(1, 1, 1)){
+        position = _position;
         Le = _Le;
     }
     vec3 radiance(float distance) {
@@ -390,6 +390,7 @@ class Scene {
     std::vector<Intersectable*> objects;
     Dodecahedron* d;
     Icosahedron* i;
+    Light *redLight;
     std::vector<Light*> lights;
     Camera camera;
     vec3 La;
@@ -401,12 +402,7 @@ public:
         camera.set(eye, lookat, vup, fov);
 
         La = vec3(0.2f,0.2f,0.2f);
-        Light *redLight = new Light(vec3(0,0.5,0),vec3(1,0,0));
-        Light *greenLight = new Light(vec3(0.5,0.5,0),vec3(0,1,0));
-        Light *blueLight = new Light(vec3(-0.5,0.5,0),vec3(0,0,1));
-        //lights.push_back(redLight);
-        //lights.push_back(greenLight);
-        //lights.push_back(blueLight);
+
 
         //init cube
         vec3 cubeVertexArr[] = {vec3(0,0,0), vec3(0,0,1), vec3(0,1,0), vec3(0,1,1),
@@ -494,18 +490,30 @@ public:
         i = new Icosahedron(icosahedronVertices, icosahedronFaces, ceramicPink);
         objects.push_back(i);
 
-        objects.push_back(new Cone(vec3(1,0.4,0.6),normalize(vec3(-1,0.3,-0.4)),0.2,0.95,ceramicPink));
-        objects.push_back(new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink));
-        objects.push_back(new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink));
+        Cone* c1 = new Cone(vec3(1,0.4,0.6),normalize(vec3(-1,0.3,-0.4)),0.2,0.95,ceramicPink);
+        Cone* c2 = new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink);
+        Cone* c3 = new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink);
+
+        redLight = new Light(c1->p + c1->n * epsilon,vec3(1,0,0));
+        Light *greenLight = new Light(c2->p + c2->n * epsilon,vec3(0,1,0));
+        Light *blueLight = new Light(c3->p + c3->n * epsilon,vec3(0,0,1));
+        lights.push_back(redLight);
+        lights.push_back(greenLight);
+        lights.push_back(blueLight);
+
+        objects.push_back(c1);
+        objects.push_back(c2);
+        objects.push_back(c3);
     }
 
-    void moveObj(char key, bool dodecahedron){
-        if(dodecahedron){
+    void moveObj(char key, int selector){
+        if(selector == 0){
             d->move(key);
         }
-        else {
+        if(selector == 1) {
             i->move(key);
         }
+
     }
 
     void scaleUpObj(bool dodecahedron) {
@@ -688,22 +696,26 @@ void onDisplay() {
     glutSwapBuffers();
 }
 
-bool dodecahedron = true;
+int selector = 0;
 
 void onKeyboard(unsigned char key, int pX, int pY) {
     if(key == 'v') {
-        dodecahedron = !dodecahedron;
+        if(selector < 2){
+            selector++;
+        } else {
+            selector = 0;
+        }
     }
     if(key == 'w' || key == 's' || key == 'a' || key == 'd' || key == 'x' || key == 'y'){
-        scene.moveObj(key,dodecahedron);
+        scene.moveObj(key,selector);
         glutPostRedisplay();
     }
     if(key == 'u'){
-        scene.scaleUpObj(dodecahedron);
+        scene.scaleUpObj(selector);
         glutPostRedisplay();
     }
     if(key == 'j'){
-        scene.scaleDownObj(dodecahedron);
+        scene.scaleDownObj(selector);
         glutPostRedisplay();
     }
 }
