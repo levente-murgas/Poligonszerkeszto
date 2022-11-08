@@ -313,29 +313,33 @@ struct Cone : public Intersectable {
 public:
     Hit intersect(const Ray& ray) {
         Hit hit;
-        vec3 sp = ray.start - p;
-        float a = dot(ray.dir,n) * dot(ray.dir,n) - cosa * cosa;
-        float b = 2.0f * (dot(ray.dir,n) * dot(sp,n) - dot(ray.dir,sp) * cosa* cosa);
-        float c = dot(sp,n)*dot(sp,n) - dot(sp,sp) * cosa * cosa;
-        float discr = b * b - 4.0f * a * c;
-        if (discr < 0.0f) return hit;
-        float sqrt_discr = sqrtf(discr);
-        float t1 = (-b - sqrt_discr) / 2.0f / a;	// t1 >= t2 for sure
-        float t2 = (-b + sqrt_discr) / 2.0f / a;
+        vec3 co = ray.start - p;
 
-        if (t1 <= 0) return hit;
-        float t = (t2 > 0) ? t2 : t1;
+        float a = dot(ray.dir,n)*dot(ray.dir,n) - cosa*cosa;
+        float b = 2. * (dot(ray.dir,n)*dot(co,n) - dot(ray.dir,co)*cosa*cosa);
+        float c = dot(co,n)*dot(co,n) - dot(co,co)*cosa*cosa;
 
-        vec3 cp = ray.start + hit.t * ray.dir - p;
+        float discr = b * b - 4. * a * c;
+        if (discr < 0.) return hit;
+
+        discr = sqrt(discr);
+        float t1 = (-b - discr) / (2. * a);
+        float t2 = (-b + discr) / (2. * a);
+
+        float t = t1;
+        if (t1 < 0. || t2 > 0. && t2 < t1) t = t2;
+        if (t1 < 0.) return hit;
+
+        vec3 cp = ray.start + t*ray.dir - p;
         float h = dot(cp, n);
-        if (h < 0.0f || h > height) return hit;
+        if (h < 0. || h > height) return hit;
 
+        vec3 normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
         hit.t = t;
-        hit.position = ray.start + ray.dir * hit.t;
-        hit.normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
+        hit.position =  ray.start + ray.dir * hit.t;
+        hit.normal = normal;
         hit.material = material;
         return hit;
-
     }
 };
 
@@ -490,7 +494,9 @@ public:
         i = new Icosahedron(icosahedronVertices, icosahedronFaces, ceramicPink);
         objects.push_back(i);
 
-        objects.push_back(new Cone(vec3(0,0,0),normalize(vec3(1,0,1)),0.03,0.8660,ceramicPink));
+        objects.push_back(new Cone(vec3(1,0.4,0.6),normalize(vec3(-1,0.3,-0.4)),0.2,0.95,ceramicPink));
+        objects.push_back(new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink));
+        objects.push_back(new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink));
     }
 
     void moveObj(char key, bool dodecahedron){
