@@ -16,7 +16,7 @@
 //=============================================================================================
 #include "framework.h"
 
-const float epsilon = 0.00001f;
+const float epsilon = 0.0001f;
 
 
 
@@ -326,10 +326,12 @@ struct Cone : public Intersectable {
             if (h < 0. || h > height) return hit;
         }
 
-        vec3 normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
+        //vec3 normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
         hit.t = t;
         hit.position =  ray.start + ray.dir * hit.t;
-        hit.normal = normal;
+        vec3 rp = normalize(hit.position - p);
+        //hit.normal = hit.position - (length(rp)/cosa * n + p);
+        hit.normal = normalize(cross(cross(n, rp), rp));
         hit.material = material;
         return hit;
     }
@@ -397,10 +399,10 @@ public:
         Material* ceramicPink = new Material(vec3(0.3, 0.25, 0.3), vec3(2, 2, 2), 40);
 
         objects.push_back(new Cube(ceramicPink, false));
-        //objects.push_back(new Dodecahedron(ceramicPink));
+        objects.push_back(new Dodecahedron(ceramicPink));
         objects.push_back(new Icosahedron(ceramicPink));
 
-        //objects.push_back(new Cone(vec3(0.5, 0.5, 0.5),normalize(vec3(0,0,1)),0.2,0.95,ceramicPink));
+        objects.push_back(new Cone(vec3(0.5, 0.5, 0.5),normalize(vec3(0,0,1)),0.2,0.95,ceramicPink));
         //objects.push_back(new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink));
         //objects.push_back(new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink));
 
@@ -417,7 +419,10 @@ public:
         for (int Y = 0; Y < windowHeight; Y++) {
 #pragma omp parallel for
             for (int X = 0; X < windowWidth; X++) {
+                if (X == 250 && Y == 300)
+                    printf("debug.");
                 vec3 color = trace(camera.getRay(X, Y));
+
                 image[Y * windowWidth + X] = vec4(color.x, color.y, color.z, 1);
             }
         }
@@ -429,7 +434,7 @@ public:
             Hit hit = object->intersect(ray); //  hit.t < 0 if no intersection
             if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
         }
-        if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = bestHit.normal * (-1);
+        if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = -bestHit.normal;
         return bestHit;
     }
 
@@ -454,7 +459,6 @@ public:
                     outRadiance = outRadiance + Le * hit.material->ks * powf(cosDelta, hit.material->shininess);
             }
         }
-
         return outRadiance;
     }
 };
@@ -534,6 +538,9 @@ int selector = 0;
 
 void onKeyboard(unsigned char key, int pX, int pY) {}
 void onKeyboardUp(unsigned char key, int pX, int pY) {}
-void onMouse(int button, int state, int pX, int pY) {}
+void onMouse(int button, int state, int pX, int pY) {
+    if (state == GLUT_DOWN)
+        printf("%d %d\n", pX, pY);
+}
 void onMouseMotion(int pX, int pY) {}
 void onIdle() {}
