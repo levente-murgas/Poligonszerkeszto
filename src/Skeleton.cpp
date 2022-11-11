@@ -376,12 +376,15 @@ struct Camera {
     }
 };
 struct Light {
-    const vec3 &position;
+    vec3 position;
     vec3 Le;
+    Cone *cone;
     Light(const vec3 &_position, vec3 _Le = vec3(1, 1, 1)) : position(_position), Le(_Le) {}
     vec3 radiance(float distance) {
         return Le / (powf(distance, 2));
     }
+    Light(Cone* _c, const vec3 &_position, vec3 _Le = vec3(1, 1, 1)) : position(_position), Le(_Le), cone(_c) {}
+
 };
 
 /// TODO: Please kill me
@@ -402,12 +405,15 @@ public:
         objects.push_back(new Dodecahedron(ceramicPink));
         objects.push_back(new Icosahedron(ceramicPink));
 
-        objects.push_back(new Cone(vec3(0.5, 0.5, 0.5),normalize(vec3(0,0,1)),0.2,0.95,ceramicPink));
-        //objects.push_back(new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink));
-        //objects.push_back(new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink));
+        Cone* c1 = new Cone(vec3(0.5, 0.5, 0.5),normalize(vec3(0,0,1)),0.2,0.95,ceramicPink);
+        Cone* c2 = new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink);
+        Cone* c3 = new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink);
+        objects.push_back(c1);
+        //objects.push_back(c2);
+        //objects.push_back(c3);
 
-
-        Light redLight = Light(LIGHTPOS,vec3(1,0,0));
+        Light redLight = Light(c1,c1->p + (c1->n * epsilon),vec3(1,0,0));
+        //Light redLight = Light(c1,vec3(1,0,0));
         //Light greenLight = Light(reinterpret_cast<Cone*>(objects[4])->p + reinterpret_cast<Cone*>(objects[4])->n * epsilon,vec3(0,1,0));
         //Light blueLight = Light(reinterpret_cast<Cone*>(objects[5])->p + reinterpret_cast<Cone*>(objects[5])->n * epsilon,vec3(0,0,1));
         lights.push_back(redLight);
@@ -419,12 +425,29 @@ public:
         for (int Y = 0; Y < windowHeight; Y++) {
 #pragma omp parallel for
             for (int X = 0; X < windowWidth; X++) {
-                if (X == 250 && Y == 300)
-                    printf("debug.");
                 vec3 color = trace(camera.getRay(X, Y));
-
                 image[Y * windowWidth + X] = vec4(color.x, color.y, color.z, 1);
             }
+        }
+    }
+
+    void replaceCone(float pX, float pY) {
+        Ray r = camera.getRay(pX, pY);
+        Hit hit = firstIntersect(r);
+        if (hit.t < 0) return;
+        if(!lights.empty()) {
+            Light* closest = &lights[0];
+            float closestDist = length(lights[0].position - hit.position);
+            for (Light light: lights) {
+                float distance = length(light.position - hit.position);
+                if (distance < closestDist) {
+                    closestDist = distance;
+                    closest = &light;
+                }
+            }
+            (*closest).cone->p = hit.position;
+            (*closest).cone->n = hit.normal;
+            (*closest).position = (*closest).cone->p - (*closest).cone->n * epsilon;
         }
     }
 
@@ -434,7 +457,7 @@ public:
             Hit hit = object->intersect(ray); //  hit.t < 0 if no intersection
             if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
         }
-        if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = -bestHit.normal;
+        if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal =  bestHit.normal * (-1);
         return bestHit;
     }
 
@@ -442,16 +465,15 @@ public:
         Hit hit = firstIntersect(ray);
         if (hit.t < 0) return La;
 
-        /// TODO: remove fabs()
         vec3 outRadiance = La * (1 + dot(hit.normal, -ray.dir)); //L = 0.2 * (1 + dot(N, V) | 0.2 <= L =< 0.4
         for (Light light : lights) {
             vec3 direction = normalize(light.position - hit.position);
             float distance = length(light.position - hit.position);
+            vec3 Le = light.radiance(distance);
             Ray shadowRay(hit.position + epsilon * hit.normal, direction);
             Hit shadowHit = firstIntersect(shadowRay);
             float cosTheta = dot(hit.normal, direction);
             if (cosTheta > 0 && (shadowHit.t < 0.0 || shadowHit.t > distance)) {
-                vec3 Le = light.radiance(distance);
                 outRadiance = outRadiance + Le * hit.material->kd * cosTheta;
                 vec3 halfway = normalize(-ray.dir + direction);
                 float cosDelta = dot(hit.normal, halfway);
@@ -529,7 +551,6 @@ void onDisplay() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     std::vector<vec4> image(windowWidth * windowHeight);
     scene.render(image);
-    /// TODO: Stop it, don't overflow your memory.
     fullScreenTexturedQuad = new FullScreenTexturedQuad(windowWidth, windowHeight, image);
     fullScreenTexturedQuad->Draw();
     glutSwapBuffers();
@@ -539,8 +560,10 @@ int selector = 0;
 void onKeyboard(unsigned char key, int pX, int pY) {}
 void onKeyboardUp(unsigned char key, int pX, int pY) {}
 void onMouse(int button, int state, int pX, int pY) {
-    if (state == GLUT_DOWN)
-        printf("%d %d\n", pX, pY);
+    if (state == GLUT_DOWN){
+        scene.replaceCone(pX,pY);
+        glutPostRedisplay();
+    }
 }
 void onMouseMotion(int pX, int pY) {}
 void onIdle() {}
