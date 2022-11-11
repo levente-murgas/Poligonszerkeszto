@@ -409,16 +409,15 @@ public:
         Cone* c2 = new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink);
         Cone* c3 = new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink);
         objects.push_back(c1);
-        //objects.push_back(c2);
-        //objects.push_back(c3);
+        objects.push_back(c2);
+        objects.push_back(c3);
 
         Light redLight = Light(c1,c1->p + (c1->n * epsilon),vec3(1,0,0));
-        //Light redLight = Light(c1,vec3(1,0,0));
-        //Light greenLight = Light(reinterpret_cast<Cone*>(objects[4])->p + reinterpret_cast<Cone*>(objects[4])->n * epsilon,vec3(0,1,0));
-        //Light blueLight = Light(reinterpret_cast<Cone*>(objects[5])->p + reinterpret_cast<Cone*>(objects[5])->n * epsilon,vec3(0,0,1));
+        Light greenLight = Light(c2,c2->p + (c2->n * epsilon),vec3(0,1,0));
+        Light blueLight = Light(c3,c3->p + (c3->n * epsilon),vec3(0,0,1));
         lights.push_back(redLight);
-        //lights.push_back(greenLight);
-        //lights.push_back(blueLight);
+        lights.push_back(greenLight);
+        lights.push_back(blueLight);
     }
 
     void render(std::vector<vec4>& image) {
