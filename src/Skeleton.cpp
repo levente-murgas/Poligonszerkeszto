@@ -16,597 +16,462 @@
 //=============================================================================================
 #include "framework.h"
 
-const float epsilon = 0.0001f;
+//---------------------------
+template<class T> struct Dnum { // Dual numbers for automatic derivation
+//---------------------------
+    float f; // function value
+    T d;  // derivatives
+    Dnum(float f0 = 0, T d0 = T(0)) { f = f0, d = d0; }
+    Dnum operator+(Dnum r) { return Dnum(f + r.f, d + r.d); }
+    Dnum operator-(Dnum r) { return Dnum(f - r.f, d - r.d); }
+    Dnum operator*(Dnum r) {
+        return Dnum(f * r.f, f * r.d + d * r.f);
+    }
+    Dnum operator/(Dnum r) {
+        return Dnum(f / r.f, (r.f * d - r.d * f) / r.f / r.f);
+    }
+};
 
-bool isInside(vec3 normal, vec3 p, vec3 r1, vec3 r2){
-    return dot(cross(r2-r1,p-r1),normal) > 0;
+// Elementary functions prepared for the chain rule as well
+template<class T> Dnum<T> Exp(Dnum<T> g) { return Dnum<T>(expf(g.f), expf(g.f)*g.d); }
+template<class T> Dnum<T> Sin(Dnum<T> g) { return  Dnum<T>(sinf(g.f), cosf(g.f)*g.d); }
+template<class T> Dnum<T> Cos(Dnum<T>  g) { return  Dnum<T>(cosf(g.f), -sinf(g.f)*g.d); }
+template<class T> Dnum<T> Tan(Dnum<T>  g) { return Sin(g) / Cos(g); }
+template<class T> Dnum<T> Sinh(Dnum<T> g) { return  Dnum<T>(sinh(g.f), cosh(g.f)*g.d); }
+template<class T> Dnum<T> Cosh(Dnum<T> g) { return  Dnum<T>(cosh(g.f), sinh(g.f)*g.d); }
+template<class T> Dnum<T> Tanh(Dnum<T> g) { return Sinh(g) / Cosh(g); }
+template<class T> Dnum<T> Log(Dnum<T> g) { return  Dnum<T>(logf(g.f), g.d / g.f); }
+template<class T> Dnum<T> Pow(Dnum<T> g, float n) {
+    return  Dnum<T>(powf(g.f, n), n * powf(g.f, n - 1) * g.d);
 }
-inline vec3 operator/(const vec3& v1, const vec3& v2) { return vec3(v1.x / v2.x, v1.y / v2.y, v1.z / v2.z); }
 
-struct Material {
-    vec3 ka, kd, ks;
-    float shininess;
-    Material(vec3 _kd, vec3 _ks, float _shininess) {
-        ka = _kd * M_PI;
-        kd = _kd;
-        ks = _ks;
-        shininess = _shininess;
-    }
-};
-struct Hit {
-    float t;
-    vec3 position, normal;
-    Material* material;
-    Hit() : t(-1) {};
-};
-struct Ray {
-    vec3 start, dir;
-    Ray(vec3 _start = vec3(), vec3 _dir = vec3()) : start(_start), dir(normalize(_dir)) {
-        start = _start;
-        dir = normalize(_dir);
-    }
-};
+typedef Dnum<vec2> Dnum2;
 
-class Intersectable {
-protected:
-    Material *material;
-    bool cull;
-    mat4 M, Minv;
+const int tessellationLevel = 20;
+
+//---------------------------
+struct Camera { // 3D camera
+//---------------------------
+    vec3 wEye, wLookat, wVup;   // extrinsic
+    float fov, asp, fp, bp;		// intrinsic
 public:
-    Intersectable(Material* _material, bool culling = true) : material(_material), cull(culling) {
-        M = Minv =
-        {1, 0, 0, 0,
-         0, 1, 0, 0,
-         0, 0, 1, 0,
-         0, 0, 0, 1
-        };
-    };
-    virtual Hit intersect(const Ray& ray) = 0;
-    inline bool isCulled() {return cull;};
-    virtual void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
-        M = ScaleMatrix(scale) * RotationMatrix(alpha, axis) * TranslateMatrix(dir);
-        Minv = TranslateMatrix(-dir) * RotationMatrix(-alpha, axis) * ScaleMatrix(1/scale);
-    }
-};
-
-struct Cube : public Intersectable {
-    struct face4 {
-        unsigned int i, j, k, l;
-        face4(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0, unsigned int _l = 0)
-                : i(_i - 1), j(_j - 1), k(_k - 1), l(_l - 1){}
-    };
-    std::vector<vec3> vertices = {
-        vec3(-1,-1,-1),
-        vec3(-1,-1,1),
-        vec3(-1,1,-1),
-        vec3(-1,1,1),
-        vec3(1,-1,-1),
-        vec3(1,-1,1),
-        vec3(1,1,-1),
-        vec3(1,1,1)
-    };
-    const std::vector<face4> faces = {
-        Cube::face4(1,2,6,5),
-        Cube::face4(3,4,2,1),
-        Cube::face4(7,8,4,3),
-        Cube::face4(5,6,8,7),
-        Cube::face4(2,4,8,6),
-        Cube::face4(5,7,3,1)
-    };
-
-    Cube(Material* _material, bool culling = true) : Intersectable(_material, culling) {}
-    Hit intersect(const Ray& ray){
-        Hit hit;
-        for (const face4& face: faces) {
-            vec3 p1 = vertices[face.i];
-            vec3 p2 = vertices[face.j];
-            vec3 p3 = vertices[face.k];
-            vec3 u = p2 - p1;
-            vec3 v = p3 - p1;
-            vec3 normal = normalize(cross(u, v));
-            float t = dot(normal,(p1 - ray.start)) / dot(normal, ray.dir);
-
-            if ((cull || (dot(ray.dir, normal) < 0)) && ((t > 0 && hit.t == -1) || (t > 0 && t < hit.t))) { //find the plane that the ray intersects first (dot(ray.dir, normal) < 0) &&
-                vec3 p = ray.start + ray.dir * t;
-                vec3 A = vertices[face.i];
-                vec3 B = vertices[face.j];
-                vec3 C = vertices[face.k];
-                vec3 D = vertices[face.l];
-
-                bool b1 = isInside(normal,p,A,B);
-                bool b2 = isInside(normal,p,B,C);
-                bool b3 = isInside(normal,p,C,D);
-                bool b4 = isInside(normal,p,D,A);
-
-                if (b1 && b2 && b3 && b4) {
-                    hit.t = t;
-                    hit.position = p;
-                    hit.normal = normal;
-                    hit.material = material;
-                }
-            }
-        }
-        return hit;
-    }
-    void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
-        vec4 w;
-        for (auto &v : vertices) {
-            w = {v.x, v.y, v.z, 1};
-            w = w * Minv;
-            v.x = w.x; v.y = w.y; v.z = w.z;
-        }
-        Intersectable::transform(scale, alpha, axis, dir);
-        for (auto &v : vertices) {
-            w = {v.x, v.y, v.z, 1};
-            w = w * M;
-            v.x = w.x; v.y = w.y; v.z = w.z;
-        }
-    }
-};
-struct Dodecahedron : public Intersectable{
-    struct face5 {
-        unsigned int i, j, k, l, m;
-        face5(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0, unsigned int _l = 0, unsigned int _m = 0)
-                : i(_i - 1), j(_j - 1), k(_k - 1), l(_l - 1), m(_m - 1) {}
-    };
-
-    std::vector<vec3> vertices = {
-        vec3(-0.57735, -0.57735, 0.57735),
-        vec3(0.934172, 0.356822, 0),
-        vec3(0.934172, -0.356822, 0),
-        vec3(-0.934172, 0.356822, 0),
-        vec3(-0.934172, -0.356822, 0),
-        vec3(0, 0.934172, 0.356822),
-        vec3(0, 0.934172, -0.356822),
-        vec3(0.356822, 0, -0.934172),
-        vec3(-0.356822, 0, -0.934172),
-        vec3(0, -0.934172, -0.356822),
-        vec3(0, -0.934172, 0.356822),
-        vec3(0.356822, 0, 0.934172),
-        vec3(-0.356822, 0, 0.934172),
-        vec3(0.57735, 0.57735, -0.57735),
-        vec3(0.57735, 0.57735, 0.57735),
-        vec3(-0.57735, 0.57735, -0.57735),
-        vec3(-0.57735, 0.57735, 0.57735),
-        vec3(0.57735, -0.57735, -0.57735),
-        vec3(0.57735, -0.57735, 0.57735),
-        vec3(-0.57735, -0.57735, -0.57735)
-    };
-    const std::vector<face5> faces = {
-        face5(2, 3, 19, 12, 15),
-        face5(2, 14, 8, 18, 3),
-        face5(4, 5, 20, 9, 16),
-        face5(4, 17, 13, 1, 5),
-        face5(4, 16, 7, 6, 17),
-        face5(2, 15, 6, 7, 14),
-        face5(3, 18, 10, 11, 19),
-        face5(5, 1, 11, 10, 20),
-        face5(8, 9, 20, 10, 18),
-        face5(7, 16, 9, 8, 14),
-        face5(6, 15, 12, 13, 17),
-        face5(11, 1, 13, 12, 19)
-    };
-
-    Dodecahedron(Material* _material, bool culling = true) : Intersectable(_material, culling) {}
-    Hit intersect(const Ray& ray) {
-        Hit hit;
-
-        for (const face5& face: faces) {
-            vec3 p1 = vertices[face.i];
-            vec3 p2 = vertices[face.j];
-            vec3 p3 = vertices[face.k];
-            vec3 u = p2 - p1;
-            vec3 v = p3 - p1;
-            vec3 normal = normalize(cross(u, v));
-            float t = dot(normal,(p1 - ray.start)) / dot(normal, ray.dir);
-
-            if ((t > 0 && hit.t == -1) || (t > 0 && t < hit.t)) { //find the plane that the ray intersects first
-                vec3 p = ray.start + ray.dir * t;
-                vec3 A = vertices[face.i];
-                vec3 B = vertices[face.j];
-                vec3 C = vertices[face.k];
-                vec3 D = vertices[face.l];
-                vec3 E = vertices[face.m];
-
-                bool b1 = isInside(normal,p,A,B);
-                bool b2 = isInside(normal,p,B,C);
-                bool b3 = isInside(normal,p,C,D);
-                bool b4 = isInside(normal,p,D,E);
-                bool b5 = isInside(normal,p,E,A);
-
-                if (b1 && b2 && b3 && b4 && b5) {
-                    hit.t = t;
-                    hit.position = p;
-                    hit.normal = normal;
-                    hit.material = material;
-                }
-            }
-        }
-        return hit;
-    }
-    void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
-        vec4 w;
-        for (auto &v : vertices) {
-            w = {v.x, v.y, v.z, 1};
-            w = w * Minv;
-            v.x = w.x; v.y = w.y; v.z = w.z;
-        }
-        Intersectable::transform(scale, alpha, axis, dir);
-        for (auto &v : vertices) {
-            w = {v.x, v.y, v.z, 1};
-            w = w * M;
-            v.x = w.x; v.y = w.y; v.z = w.z;
-        }
-    }
-};
-struct Icosahedron : public Intersectable {
-    struct face3 {
-        unsigned int i, j, k;
-        face3(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0)
-                : i(_i - 1), j(_j - 1), k(_k - 1){}
-    };
-    std::vector<vec3> vertices = {
-        vec3(0, -0.525731, 0.850651),
-        vec3(0.850651, 0, 0.525731),
-        vec3(0.850651, 0, -0.525731),
-        vec3(-0.850651, 0, -0.525731),
-        vec3(-0.850651, 0, 0.525731),
-        vec3(-0.525731, 0.850651, 0),
-        vec3(0.525731, 0.850651, 0),
-        vec3(0.525731, -0.850651, 0),
-        vec3(-0.525731, -0.850651, 0),
-        vec3(0, -0.525731, -0.850651),
-        vec3(0, 0.525731, -0.850651),
-        vec3(0, 0.525731, 0.850651)
-    };
-    const std::vector<face3> faces = {
-        face3(2,3,7),
-        face3(2,8,3),
-        face3(4,5,6),
-        face3(5,4,9),
-        face3(7,6,12),
-        face3(6,7,11),
-        face3(10,11,3),
-        face3(11,10,4),
-        face3(8,9,10),
-        face3(9,8,1),
-        face3(12,1,2),
-        face3(1,12,5),
-        face3(7,3,11),
-        face3(2,7,12),
-        face3(4,6,11),
-        face3(6,5,12),
-        face3(3,8,10),
-        face3(8,2,1),
-        face3(4,10,9),
-        face3(5,9,1)
-    };
-
-    Icosahedron(Material* _material, bool culling = true) : Intersectable(_material, culling) {}
-
-    Hit intersect(const Ray& ray) {
-        Hit hit;
-
-        for (const face3& face: faces) {
-            vec3 p1 = vertices[face.i];
-            vec3 p2 = vertices[face.j];
-            vec3 p3 = vertices[face.k];
-            vec3 u = p2 - p1;
-            vec3 v = p3 - p1;
-            vec3 normal = normalize(cross(u, v));
-            float t = dot(normal,(p1 - ray.start)) / dot(normal, ray.dir);
-
-            if ((t > 0 && hit.t == -1) || (t > 0 && t < hit.t)) { //find the plane that the ray intersects first
-                vec3 p = ray.start + ray.dir * t;
-                vec3 A = vertices[face.i];
-                vec3 B = vertices[face.j];
-                vec3 C = vertices[face.k];
-
-                bool b1 = isInside(normal,p,A,B);
-                bool b2 = isInside(normal,p,B,C);
-                bool b3 = isInside(normal,p,C,A);
-
-                if (b1 && b2 && b3) {
-                    hit.t = t;
-                    hit.position = p;
-                    hit.normal = normal;
-                    hit.material = material;
-                }
-            }
-        }
-        return hit;
-    }
-    void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
-        vec4 w;
-        for (auto &v : vertices) {
-            w = {v.x, v.y, v.z, 1};
-            w = w * Minv;
-            v.x = w.x; v.y = w.y; v.z = w.z;
-        }
-        Intersectable::transform(scale, alpha, axis, dir);
-        for (auto &v : vertices) {
-            w = {v.x, v.y, v.z, 1};
-            w = w * M;
-            v.x = w.x; v.y = w.y; v.z = w.z;
-        }
-    }
-};
-struct Cone : public Intersectable {
-    vec3 p; //tip point
-    vec3 n; //cone axis
-    float height;
-    float cosa;
-
-    Cone(vec3 _p, vec3 _n, float _height, float _cosa, Material* _material, bool culling = true) : Intersectable(_material, culling) {
-        p = _p;
-        n = _n;
-        height = _height;
-        cosa = _cosa;
-    }
-    void set(vec3 _p, vec3 _n) {
-        p = _p;
-        n = _n;
-    }
-    Hit intersect(const Ray& ray) {
-        Hit hit;
-        vec3 sp = ray.start - p;
-        float dn = dot(ray.dir, n);
-        float xn = dot(sp, n);
-        float c2 = cosa*cosa;
-
-        float a = dn*dn - c2 * dot(ray.dir, ray.dir);
-        float b = 2 * (dn * xn - c2 * dot(ray.dir, sp));
-        float c = xn*xn - c2 * dot(sp, sp);
-
-        float discr = b * b - 4 * a * c;
-        if (discr < 0) return hit;
-
-        discr = sqrtf(discr);
-        float t, t1, t2;
-        t1 = (-b + discr) / (2 * a);
-        t2 = (-b - discr) / (2 * a);
-
-        t = (t2 > 0) ? t1 : t2;
-        if (t < 0)
-            return hit;
-        vec3 cp = ray.start + t * ray.dir - p;
-        float h = dot(cp, n);
-        if (h < 0. || h > height) {
-            t = t2;
-            cp = ray.start + t * ray.dir - p;
-            h = dot(cp, n);
-            if (h < 0. || h > height)
-                return hit;
-        }
-
-        hit.t = t;
-        hit.position = ray.start + ray.dir * t;
-        vec3 rp = normalize(hit.position - p);
-        hit.normal = normalize(cross(cross(n, rp), rp));
-        hit.material = material;
-        return hit;
-    }
-};
-
-struct Camera {
-    vec3 eye, lookat, right, up;
-    float fov;
-
     Camera() {
-        vec3 _eye = vec3(1.0, 0, -1.4);
-        vec3 _vup = vec3(0, 1, 0);
-        vec3 _lookat = vec3(0, 0, 0);
-        float _fov = 50 * M_PI / 180;
-        set(_eye, _lookat, _vup, _fov);
+        asp = (float)windowWidth / windowHeight;
+        fov = 75.0f * (float)M_PI / 180.0f;
+        fp = 1; bp = 20;
     }
-    Camera(vec3 _eye, vec3 _lookat, vec3 _vup, float _fov) {
-        set(_eye, _lookat, _vup, _fov);
+    mat4 V() { // view matrix: translates the center to the origin
+        vec3 w = normalize(wEye - wLookat);
+        vec3 u = normalize(cross(wVup, w));
+        vec3 v = cross(w, u);
+        return TranslateMatrix(wEye * (-1)) * mat4(u.x, v.x, w.x, 0,
+                                                   u.y, v.y, w.y, 0,
+                                                   u.z, v.z, w.z, 0,
+                                                   0,   0,   0,   1);
     }
-    void set(vec3 _eye, vec3 _lookat, vec3 vup, float _fov) {
-        eye = _eye;
-        lookat = _lookat;
-        fov = _fov;
-        vec3 w = eye - lookat;
-        float focus = length(w);
-        right = normalize(cross(vup, w)) * focus * tanf(fov / 2);
-        up = normalize(cross(w, right)) * focus * tanf(fov / 2);
-    }
-    Ray getRay(int x, int y) {
-        vec3 dir = lookat + right * (2.0f*x / windowWidth - 1) + up * (1 - 2.0*y / windowHeight) - eye;
-        return Ray(eye, dir);
+
+    mat4 P() { // projection matrix
+        return mat4(1 / (tan(fov / 2)*asp), 0,                0,                      0,
+                    0,                      1 / tan(fov / 2), 0,                      0,
+                    0,                      0,                -(fp + bp) / (bp - fp), -1,
+                    0,                      0,                -2 * fp*bp / (bp - fp),  0);
     }
 };
+
+//---------------------------
+struct Material {
+//---------------------------
+    vec3 kd, ks, ka;
+    float shininess;
+};
+
+//---------------------------
 struct Light {
-    vec3 position;
-    vec3 Le;
-    Cone *cone;
-    Light(const vec3 &_position, vec3 _Le = vec3(1, 1, 1)) : position(_position), Le(_Le) {}
-    vec3 radiance(float distance) {
-        return Le / (powf(distance, 2));
-    }
-    Light(Cone* _c, const vec3 _position, vec3 _Le = vec3(1, 1, 1)) : position(_position), Le(_Le), cone(_c) {}
-    void set(vec3 p) {
-        position = p;
+//---------------------------
+    vec3 La, Le;
+    vec4 wLightPos; // homogeneous coordinates, can be at ideal point
+};
+
+//---------------------------
+class CheckerBoardTexture : public Texture {
+//---------------------------
+public:
+    CheckerBoardTexture(const int width, const int height) : Texture() {
+        std::vector<vec4> image(width * height);
+        const vec4 yellow(1, 1, 0, 1), blue(0, 0, 1, 1);
+        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
+                image[y * width + x] = (x & 1) ^ (y & 1) ? yellow : blue;
+            }
+        create(width, height, image, GL_NEAREST);
     }
 };
 
-class Scene {
-    std::vector<Intersectable*> objects;
+//---------------------------
+struct RenderState {
+//---------------------------
+    mat4	           MVP, M, Minv, V, P;
+    Material *         material;
     std::vector<Light> lights;
-    Camera camera;
-    vec3 La;
+    Texture *          texture;
+    vec3	           wEye;
+};
+
+//---------------------------
+class Shader : public GPUProgram {
+//---------------------------
 public:
-    void build() {
-        La = vec3(0.2f,0.2f,0.2f);
-        Material* m = new Material(vec3(0.3, 0.25, 0.3), vec3(2, 2, 2), 40);
+    virtual void Bind(RenderState state) = 0;
 
-        Cube* c = new Cube(m, false);
-        c->transform(vec3(0.5,0.5,0.5), 0, vec3(0, 1, 0), vec3(0, 0, 0));
-        objects.push_back(c);
-        Dodecahedron* d = new Dodecahedron(m);
-        d->transform(vec3(0.28,0.28,0.28), 0, vec3(0, 1, 0), vec3(0.23843184, -0.23843184, 0.03843184));
-        objects.push_back(d);
-        Icosahedron* i = new Icosahedron(m);
-        i->transform(vec3(0.2,0.2,0.2), M_PI / 2.0, vec3(0, 1, 0), vec3(0, -0.31285678, -0.31285678));
-        objects.push_back(i);
+    void setUniformMaterial(const Material& material, const std::string& name) {
+        setUniform(material.kd, name + ".kd");
+        setUniform(material.ks, name + ".ks");
+        setUniform(material.ka, name + ".ka");
+        setUniform(material.shininess, name + ".shininess");
+    }
 
-        Cone* c1 = new Cone(vec3(-0.3, 0.3, 0.5),normalize(vec3(0,0,-1)),0.08,0.9,m);
-        Cone* c2 = new Cone(vec3(-0.3, 0.5, 0),normalize(vec3(0,-1,0)),0.08,0.9,m);
-        Cone* c3 = new Cone(vec3(0.155912, -0.071450, -0.119936),normalize(vec3(0, 0.525731, -0.850651)),0.08,0.9,m);
-        objects.push_back(c1);
-        objects.push_back(c2);
-        objects.push_back(c3);
-
-        Light redLight = Light(c1,c1->p + (c1->n * 0.005),vec3(10,0,0));
-        Light greenLight = Light(c2,c2->p + (c2->n * 0.005),vec3(0,10,0));
-        Light blueLight = Light(c3,c3->p + (c3->n * 0.005),vec3(0,0,10));
-        lights.push_back(redLight);
-        lights.push_back(greenLight);
-        lights.push_back(blueLight);
-    }
-    void render(std::vector<vec4>& image) {
-        for (int Y = 0; Y < windowHeight; Y++) {
-#pragma omp parallel for
-            for (int X = 0; X < windowWidth; X++) {
-                vec3 color = trace(camera.getRay(X, Y));
-
-                image[(windowHeight - Y - 1) * windowWidth + X] = vec4(color.x, color.y, color.z, 1);
-            }
-        }
-    }
-    void moveCone(int x, int y) {
-        Ray ray = camera.getRay(x, y);
-        Hit hit = firstIntersect(ray);
-        Light* closest = nullptr;
-        for (auto& l : lights) {
-            if (closest == nullptr)
-                closest = &l;
-            else
-                if (length(closest->position - hit.position) > length(l.position - hit.position))
-                    closest = &l;
-        }
-        closest->cone->set(hit.position, hit.normal);
-        closest->set(hit.position + hit.normal * 0.005);
-    }
-    bool shadowIntersect(Ray ray, float max) {
-        for (Intersectable * object : objects) {
-            Hit hit = object->intersect(ray);
-            if (hit.t > 0 && hit.t < max)
-                return true;
-        }
-        return false;
-    }
-    Hit firstIntersect(Ray ray) {
-        Hit bestHit;
-        for (Intersectable * object : objects) {
-            Hit hit = object->intersect(ray); //  hit.t < 0 if no intersection
-            if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
-        }
-        if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = bestHit.normal * (-1);
-        return bestHit;
-    }
-    vec3 trace(Ray ray) {
-        Hit hit = firstIntersect(ray);
-        if (hit.t < 0) return vec3(0, 0, 0);
-
-        vec3 outRadiance = La * (1 + dot(hit.normal, -ray.dir)); //L = 0.2 * (1 + dot(N, V) | 0.2 <= L =< 0.4
-        vec3 direction;
-        for (Light light : lights) {
-            direction = light.position - hit.position;
-            Ray shadowRay(hit.position + hit.normal * epsilon, direction);
-            if (!shadowIntersect(shadowRay, length(direction))) {
-                direction = normalize(direction);
-                float cosTheta = dot(hit.normal, direction);
-                if (cosTheta > 0) {
-                    float distance = length(light.position - hit.position);
-                    vec3 Le = light.radiance(distance);
-                    outRadiance = outRadiance + Le * hit.material->kd * cosTheta;
-                    vec3 halfway = normalize(-ray.dir + direction);
-                    float cosDelta = dot(hit.normal, halfway);
-                    if (cosDelta > 0)
-                        outRadiance = outRadiance + Le * hit.material->ks * powf(cosDelta, hit.material->shininess);
-                }
-            }
-        }
-        return outRadiance;
+    void setUniformLight(const Light& light, const std::string& name) {
+        setUniform(light.La, name + ".La");
+        setUniform(light.Le, name + ".Le");
+        setUniform(light.wLightPos, name + ".wLightPos");
     }
 };
 
-const char* vertexSource = R"(
-	#version 330
-    precision highp float;
-	layout(location = 0) in vec2 cVertexPosition;
-	out vec2 texcoord;
-	void main() {
-		texcoord = (cVertexPosition + vec2(1, 1))/2;
-		gl_Position = vec4(cVertexPosition.x, cVertexPosition.y, 0, 1);
-	}
-)";
-const char* fragmentSource = R"(
-	#version 330
-    precision highp float;
-	uniform sampler2D textureUnit;
-	in  vec2 texcoord;
-	out vec4 fragmentColor;
-	void main() {
-		fragmentColor = texture(textureUnit, texcoord);
-	}
-)";
+//---------------------------
+class PhongShader : public Shader {
+//---------------------------
+    const char * vertexSource = R"(
+		#version 330
+		precision highp float;
 
-GPUProgram gpuProgram;
-Scene scene;
-static unsigned int frameRendered = 0;
+		struct Light {
+			vec3 La, Le;
+			vec4 wLightPos;
+		};
 
-class FullScreenTexturedQuad {
-    unsigned int vao;
-    Texture texture;
+		uniform mat4  MVP, M, Minv; // MVP, Model, Model-inverse
+		uniform Light[8] lights;    // light sources
+		uniform int   nLights;
+		uniform vec3  wEye;         // pos of eye
+
+		layout(location = 0) in vec3  vtxPos;            // pos in modeling space
+		layout(location = 1) in vec3  vtxNorm;      	 // normal in modeling space
+		layout(location = 2) in vec2  vtxUV;
+
+		out vec3 wNormal;		    // normal in world space
+		out vec3 wView;             // view in world space
+		out vec3 wLight[8];		    // light dir in world space
+		out vec2 texcoord;
+
+		void main() {
+			gl_Position = vec4(vtxPos, 1) * MVP; // to NDC
+			// vectors for radiance computation
+			vec4 wPos = vec4(vtxPos, 1) * M;
+			for(int i = 0; i < nLights; i++) {
+				wLight[i] = lights[i].wLightPos.xyz * wPos.w - wPos.xyz * lights[i].wLightPos.w;
+			}
+		    wView  = wEye * wPos.w - wPos.xyz;
+		    wNormal = (Minv * vec4(vtxNorm, 0)).xyz;
+		    texcoord = vtxUV;
+		}
+	)";
+
+    // fragment shader in GLSL
+    const char * fragmentSource = R"(
+		#version 330
+		precision highp float;
+
+		struct Light {
+			vec3 La, Le;
+			vec4 wLightPos;
+		};
+
+		struct Material {
+			vec3 kd, ks, ka;
+			float shininess;
+		};
+
+		uniform Material material;
+		uniform Light[8] lights;    // light sources
+		uniform int   nLights;
+		uniform sampler2D diffuseTexture;
+
+		in  vec3 wNormal;       // interpolated world sp normal
+		in  vec3 wView;         // interpolated world sp view
+		in  vec3 wLight[8];     // interpolated world sp illum dir
+		in  vec2 texcoord;
+
+        out vec4 fragmentColor; // output goes to frame buffer
+
+		void main() {
+			vec3 N = normalize(wNormal);
+			vec3 V = normalize(wView);
+			if (dot(N, V) < 0) N = -N;	// prepare for one-sided surfaces like Mobius or Klein
+			vec3 texColor = texture(diffuseTexture, texcoord).rgb;
+			vec3 ka = material.ka * texColor;
+			vec3 kd = material.kd * texColor;
+
+			vec3 radiance = vec3(0, 0, 0);
+			for(int i = 0; i < nLights; i++) {
+				vec3 L = normalize(wLight[i]);
+				vec3 H = normalize(L + V);
+				float cost = max(dot(N,L), 0), cosd = max(dot(N,H), 0);
+				// kd and ka are modulated by the texture
+				radiance += ka * lights[i].La +
+                           (kd * texColor * cost + material.ks * pow(cosd, material.shininess)) * lights[i].Le;
+			}
+			fragmentColor = vec4(radiance, 1);
+		}
+	)";
 public:
-    FullScreenTexturedQuad(int windowWidth, int windowHeight, std::vector<vec4>& image)
-            : texture(windowWidth, windowHeight, image) {
+    PhongShader() { create(vertexSource, fragmentSource, "fragmentColor"); }
+
+    void Bind(RenderState state) {
+        Use(); 		// make this program run
+        setUniform(state.MVP, "MVP");
+        setUniform(state.M, "M");
+        setUniform(state.Minv, "Minv");
+        setUniform(state.wEye, "wEye");
+        setUniform(*state.texture, std::string("diffuseTexture"));
+        setUniformMaterial(*state.material, "material");
+
+        setUniform((int)state.lights.size(), "nLights");
+        for (unsigned int i = 0; i < state.lights.size(); i++) {
+            setUniformLight(state.lights[i], std::string("lights[") + std::to_string(i) + std::string("]"));
+        }
+    }
+};
+
+//---------------------------
+class Geometry {
+//---------------------------
+protected:
+    unsigned int vao, vbo;        // vertex array object
+public:
+    Geometry() {
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);
-        unsigned int vbo;
-        glGenBuffers(1, &vbo);
+        glGenBuffers(1, &vbo); // Generate 1 vertex buffer object
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        float vertexCoords[] = { -1, -1,  1, -1,  1, 1,  -1, 1 };
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertexCoords), vertexCoords, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+    }
+    virtual void Draw() = 0;
+    ~Geometry() {
+        glDeleteBuffers(1, &vbo);
+        glDeleteVertexArrays(1, &vao);
+    }
+};
+
+//---------------------------
+class ParamSurface : public Geometry {
+//---------------------------
+    struct VertexData {
+        vec3 position, normal;
+        vec2 texcoord;
+    };
+
+    unsigned int nVtxPerStrip, nStrips;
+public:
+    ParamSurface() { nVtxPerStrip = nStrips = 0; }
+
+    virtual void eval(Dnum2& U, Dnum2& V, Dnum2& X, Dnum2& Y, Dnum2& Z) = 0;
+
+    VertexData GenVertexData(float u, float v) {
+        VertexData vtxData;
+        vtxData.texcoord = vec2(u, v);
+        Dnum2 X, Y, Z;
+        Dnum2 U(u, vec2(1, 0)), V(v, vec2(0, 1));
+        eval(U, V, X, Y, Z);
+        vtxData.position = vec3(X.f, Y.f, Z.f);
+        vec3 drdU(X.d.x, Y.d.x, Z.d.x), drdV(X.d.y, Y.d.y, Z.d.y);
+        vtxData.normal = cross(drdU, drdV);
+        return vtxData;
+    }
+
+    void create(int N = tessellationLevel, int M = tessellationLevel) {
+        nVtxPerStrip = (M + 1) * 2;
+        nStrips = N;
+        std::vector<VertexData> vtxData;	// vertices on the CPU
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j <= M; j++) {
+                vtxData.push_back(GenVertexData((float)j / M, (float)i / N));
+                vtxData.push_back(GenVertexData((float)j / M, (float)(i + 1) / N));
+            }
+        }
+        glBufferData(GL_ARRAY_BUFFER, nVtxPerStrip * nStrips * sizeof(VertexData), &vtxData[0], GL_STATIC_DRAW);
+        // Enable the vertex attribute arrays
+        glEnableVertexAttribArray(0);  // attribute array 0 = POSITION
+        glEnableVertexAttribArray(1);  // attribute array 1 = NORMAL
+        glEnableVertexAttribArray(2);  // attribute array 2 = TEXCOORD0
+        // attribute array, components/attribute, component type, normalize?, stride, offset
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, position));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, normal));
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, texcoord));
     }
 
     void Draw() {
         glBindVertexArray(vao);
-        gpuProgram.setUniform(texture, "textureUnit");
-        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+        for (unsigned int i = 0; i < nStrips; i++) glDrawArrays(GL_TRIANGLE_STRIP, i *  nVtxPerStrip, nVtxPerStrip);
     }
 };
 
-FullScreenTexturedQuad* fullScreenTexturedQuad;
+//---------------------------
+class Klein : public ParamSurface {
+//---------------------------
+    const float size = 1.5f;
+public:
+    Klein() { create(); }
+    void eval(Dnum2& U, Dnum2& V, Dnum2& X, Dnum2& Y, Dnum2& Z) {
+        U = U * M_PI * 2, V = V * M_PI * 2;
+        Dnum2 a = Cos(U) * (Sin(U) + 1) * 0.3f;
+        Dnum2 b = Sin(U) * 0.8f;
+        Dnum2 c = (Cos(U) * (-0.1f) + 0.2f);
+        X = a + c * ((U.f > M_PI) ? Cos(V + M_PI) : Cos(U) * Cos(V));
+        Y = b + ((U.f > M_PI) ? 0 : c * Sin(U) * Cos(V));
+        Z = c * Sin(V);
+    }
+};
 
+//---------------------------
+struct Object {
+//---------------------------
+    Shader *   shader;
+    Material * material;
+    Texture *  texture;
+    Geometry * geometry;
+    vec3 scale, translation, rotationAxis;
+    float rotationAngle;
+public:
+    Object(Shader * _shader, Material * _material, Texture * _texture, Geometry * _geometry) :
+            scale(vec3(1, 1, 1)), translation(vec3(0, 0, 0)), rotationAxis(0, 0, 1), rotationAngle(0) {
+        shader = _shader;
+        texture = _texture;
+        material = _material;
+        geometry = _geometry;
+    }
+
+    virtual void SetModelingTransform(mat4& M, mat4& Minv) {
+        M = ScaleMatrix(scale) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
+        Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
+    }
+
+    void Draw(RenderState state) {
+        mat4 M, Minv;
+        SetModelingTransform(M, Minv);
+        state.M = M;
+        state.Minv = Minv;
+        state.MVP = state.M * state.V * state.P;
+        state.material = material;
+        state.texture = texture;
+        shader->Bind(state);
+        geometry->Draw();
+    }
+
+    virtual void Animate(float tstart, float tend) { rotationAngle = 0.8f * tend; }
+};
+
+//---------------------------
+class Scene {
+//---------------------------
+    std::vector<Object *> objects;
+    Camera camera; // 3D camera
+    std::vector<Light> lights;
+public:
+    void Build() {
+        // Shaders
+        Shader * phongShader = new PhongShader();
+
+        // Materials
+        Material * material0 = new Material;
+        material0->kd = vec3(0.6f, 0.4f, 0.2f);
+        material0->ks = vec3(4, 4, 4);
+        material0->ka = vec3(0.1f, 0.1f, 0.1f);
+        material0->shininess = 100;
+
+        Material * material1 = new Material;
+        material1->kd = vec3(0.8f, 0.6f, 0.4f);
+        material1->ks = vec3(0.3f, 0.3f, 0.3f);
+        material1->ka = vec3(0.2f, 0.2f, 0.2f);
+        material1->shininess = 30;
+
+        // Textures
+        Texture * texture4x8 = new CheckerBoardTexture(4, 8);
+        Texture * texture15x20 = new CheckerBoardTexture(15, 20);
+
+        // Geometries
+        Geometry * klein = new Klein();
+
+        Object * kleinObject1 = new Object(phongShader, material1, texture4x8, klein);
+        kleinObject1->translation = vec3(3, 3, 0);
+        objects.push_back(kleinObject1);
+
+        // Camera
+        camera.wEye = vec3(0, 0, 8);
+        camera.wLookat = vec3(0, 0, 0);
+        camera.wVup = vec3(0, 1, 0);
+
+        // Lights
+        lights.resize(1);
+        lights[0].wLightPos = vec4(5, 5, 4, 0);	// ideal point -> directional light source
+        lights[0].La = vec3(0.1f, 0.1f, 1);
+        lights[0].Le = vec3(3, 0, 0);
+
+
+    }
+
+    void Render() {
+        RenderState state;
+        state.wEye = camera.wEye;
+        state.V = camera.V();
+        state.P = camera.P();
+        state.lights = lights;
+        for (Object * obj : objects) obj->Draw(state);
+    }
+
+    void Animate(float tstart, float tend) {
+        for (Object * obj : objects) obj->Animate(tstart, tend);
+    }
+};
+
+Scene scene;
+
+// Initialization, create an OpenGL context
 void onInitialization() {
     glViewport(0, 0, windowWidth, windowHeight);
-    scene.build();
-    std::vector<vec4> image(windowWidth * windowHeight);
-    gpuProgram.create(vertexSource, fragmentSource, "fragmentColor");
-}
-void onDisplay() {
-    glClearColor(1.0f, 0.5f, 0.8f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    std::vector<vec4> image(windowWidth * windowHeight);
-    scene.render(image);
-    delete fullScreenTexturedQuad;
-    fullScreenTexturedQuad = new FullScreenTexturedQuad(windowWidth, windowHeight, image);
-    fullScreenTexturedQuad->Draw();
-    glutSwapBuffers();
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    scene.Build();
 }
 
-void onKeyboard(unsigned char key, int pX, int pY) {}
-void onKeyboardUp(unsigned char key, int pX, int pY) {}
-void onMouse(int button, int state, int pX, int pY) {
-    if (state == GLUT_DOWN){
-        scene.moveCone(pX, pY);
-        glutPostRedisplay();
-    }
+// Window has become invalid: Redraw
+void onDisplay() {
+    glClearColor(0.5f, 0.5f, 0.8f, 1.0f);							// background color
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the screen
+    scene.Render();
+    glutSwapBuffers();									// exchange the two buffers
 }
-void onMouseMotion(int pX, int pY) {}
-void onIdle() {}
+
+// Key of ASCII code pressed
+void onKeyboard(unsigned char key, int pX, int pY) { }
+
+// Key of ASCII code released
+void onKeyboardUp(unsigned char key, int pX, int pY) { }
+
+// Mouse click event
+void onMouse(int button, int state, int pX, int pY) { }
+
+// Move mouse with key pressed
+void onMouseMotion(int pX, int pY) {
+}
+
+// Idle event indicating that some time elapsed: do animation here
+void onIdle() {
+    static float tend = 0;
+    const float dt = 0.1f; // dt is ”infinitesimal”
+    float tstart = tend;
+    tend = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+
+    for (float t = tstart; t < tend; t += dt) {
+        float Dt = fmin(dt, tend - t);
+        scene.Animate(t, t + Dt);
+    }
+    glutPostRedisplay();
+}
