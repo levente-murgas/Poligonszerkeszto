@@ -18,8 +18,6 @@
 
 const float epsilon = 0.0001f;
 
-
-
 bool isInside(vec3 normal, vec3 p, vec3 r1, vec3 r2){
     return dot(cross(r2-r1,p-r1),normal) > 0;
 }
@@ -49,15 +47,26 @@ struct Ray {
     }
 };
 
-/// TODO: add feature for scaling, moving and rotating objects
 class Intersectable {
 protected:
-    Material* material;
+    Material *material;
     bool cull;
+    mat4 M, Minv;
 public:
-    Intersectable(Material* _material, bool culling = true) : material(_material), cull(culling) {};
+    Intersectable(Material* _material, bool culling = true) : material(_material), cull(culling) {
+        M = Minv =
+        {1, 0, 0, 0,
+         0, 1, 0, 0,
+         0, 0, 1, 0,
+         0, 0, 0, 1
+        };
+    };
     virtual Hit intersect(const Ray& ray) = 0;
     inline bool isCulled() {return cull;};
+    virtual void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
+        M = ScaleMatrix(scale) * RotationMatrix(alpha, axis) * TranslateMatrix(dir);
+        Minv = TranslateMatrix(-dir) * RotationMatrix(-alpha, axis) * ScaleMatrix(1/scale);
+    }
 };
 
 struct Cube : public Intersectable {
@@ -67,16 +76,16 @@ struct Cube : public Intersectable {
                 : i(_i - 1), j(_j - 1), k(_k - 1), l(_l - 1){}
     };
     std::vector<vec3> vertices = {
-        vec3(0,0,0),
-        vec3(0,0,1),
-        vec3(0,1,0),
-        vec3(0,1,1),
-        vec3(1,0,0),
-        vec3(1,0,1),
-        vec3(1,1,0),
+        vec3(-1,-1,-1),
+        vec3(-1,-1,1),
+        vec3(-1,1,-1),
+        vec3(-1,1,1),
+        vec3(1,-1,-1),
+        vec3(1,-1,1),
+        vec3(1,1,-1),
         vec3(1,1,1)
     };
-    std::vector<face4> faces = {
+    const std::vector<face4> faces = {
         Cube::face4(1,2,6,5),
         Cube::face4(3,4,2,1),
         Cube::face4(7,8,4,3),
@@ -86,7 +95,6 @@ struct Cube : public Intersectable {
     };
 
     Cube(Material* _material, bool culling = true) : Intersectable(_material, culling) {}
-
     Hit intersect(const Ray& ray){
         Hit hit;
         for (const face4& face: faces) {
@@ -120,6 +128,20 @@ struct Cube : public Intersectable {
         }
         return hit;
     }
+    void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
+        vec4 w;
+        for (auto &v : vertices) {
+            w = {v.x, v.y, v.z, 1};
+            w = w * Minv;
+            v.x = w.x; v.y = w.y; v.z = w.z;
+        }
+        Intersectable::transform(scale, alpha, axis, dir);
+        for (auto &v : vertices) {
+            w = {v.x, v.y, v.z, 1};
+            w = w * M;
+            v.x = w.x; v.y = w.y; v.z = w.z;
+        }
+    }
 };
 struct Dodecahedron : public Intersectable{
     struct face5 {
@@ -128,47 +150,47 @@ struct Dodecahedron : public Intersectable{
                 : i(_i - 1), j(_j - 1), k(_k - 1), l(_l - 1), m(_m - 1) {}
     };
 
-    const std::vector<vec3> vertices = {
-        vec3(0.2527,0.6011,0.5352),
-        vec3(0.2527,0.4182,0.5352),
-        vec3(0.2527,0.4182,0.0566),
-        vec3(0.2527,0.6011,0.0566),
-        vec3(0.4920,0.5096,0.3872),
-        vec3(0.0134,0.5096,0.3872),
-        vec3(0.0134,0.5096,0.2044),
-        vec3(0.4920,0.5096,0.2044),
-        vec3(0.3440,0.7489,0.2959),
-        vec3(0.1612,0.7489,0.2959),
-        vec3(0.1612,0.2703,0.2959),
-        vec3(0.3440,0.2703,0.2959),
-        vec3(0.4005,0.6575,0.4437),
-        vec3(0.1047,0.6575,0.4437),
-        vec3(0.1047,0.3617,0.4437),
-        vec3(0.4005,0.3617,0.4437),
-        vec3(0.4005,0.3617,0.1479),
-        vec3(0.4005,0.6575,0.1479),
-        vec3(0.1047,0.6575,0.1479),
-        vec3(0.1047,0.3617,0.1479)
+    std::vector<vec3> vertices = {
+        vec3(-0.57735, -0.57735, 0.57735),
+        vec3(0.934172, 0.356822, 0),
+        vec3(0.934172, -0.356822, 0),
+        vec3(-0.934172, 0.356822, 0),
+        vec3(-0.934172, -0.356822, 0),
+        vec3(0, 0.934172, 0.356822),
+        vec3(0, 0.934172, -0.356822),
+        vec3(0.356822, 0, -0.934172),
+        vec3(-0.356822, 0, -0.934172),
+        vec3(0, -0.934172, -0.356822),
+        vec3(0, -0.934172, 0.356822),
+        vec3(0.356822, 0, 0.934172),
+        vec3(-0.356822, 0, 0.934172),
+        vec3(0.57735, 0.57735, -0.57735),
+        vec3(0.57735, 0.57735, 0.57735),
+        vec3(-0.57735, 0.57735, -0.57735),
+        vec3(-0.57735, 0.57735, 0.57735),
+        vec3(0.57735, -0.57735, -0.57735),
+        vec3(0.57735, -0.57735, 0.57735),
+        vec3(-0.57735, -0.57735, -0.57735)
     };
     const std::vector<face5> faces = {
-        face5(1,2,16,5,13),
-        face5(1,13,9,10,14),
-        face5(1,14,6,15,2),
-        face5(2,15,11,12,16),
-        face5(3,4,18,8,17),
-        face5(3,17,12,11,20),
-        face5(3,20,7,19,4),
-        face5(19,10,9,18,4),
-        face5(16,12,17,8,5),
-        face5(5,8,18,9,13),
-        face5(14,10,19,7,6),
-        face5(6,7,20,11,15)
+        face5(2, 3, 19, 12, 15),
+        face5(2, 14, 8, 18, 3),
+        face5(4, 5, 20, 9, 16),
+        face5(4, 17, 13, 1, 5),
+        face5(4, 16, 7, 6, 17),
+        face5(2, 15, 6, 7, 14),
+        face5(3, 18, 10, 11, 19),
+        face5(5, 1, 11, 10, 20),
+        face5(8, 9, 20, 10, 18),
+        face5(7, 16, 9, 8, 14),
+        face5(6, 15, 12, 13, 17),
+        face5(11, 1, 13, 12, 19)
     };
 
     Dodecahedron(Material* _material, bool culling = true) : Intersectable(_material, culling) {}
-
     Hit intersect(const Ray& ray) {
         Hit hit;
+
         for (const face5& face: faces) {
             vec3 p1 = vertices[face.i];
             vec3 p2 = vertices[face.j];
@@ -202,6 +224,20 @@ struct Dodecahedron : public Intersectable{
         }
         return hit;
     }
+    void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
+        vec4 w;
+        for (auto &v : vertices) {
+            w = {v.x, v.y, v.z, 1};
+            w = w * Minv;
+            v.x = w.x; v.y = w.y; v.z = w.z;
+        }
+        Intersectable::transform(scale, alpha, axis, dir);
+        for (auto &v : vertices) {
+            w = {v.x, v.y, v.z, 1};
+            w = w * M;
+            v.x = w.x; v.y = w.y; v.z = w.z;
+        }
+    }
 };
 struct Icosahedron : public Intersectable {
     struct face3 {
@@ -209,19 +245,19 @@ struct Icosahedron : public Intersectable {
         face3(unsigned int _i = 0, unsigned int _j = 0, unsigned int _k = 0)
                 : i(_i - 1), j(_j - 1), k(_k - 1){}
     };
-    const std::vector<vec3> vertices = {
-        vec3(0.5472,0.0979,0.3820),
-        vec3(0.7228,0.2064,0.3149),
-        vec3(0.7228,0.2064,0.0979),
-        vec3(0.3716,0.2064,0.0979),
-        vec3(0.3716,0.2064,0.3149),
-        vec3(0.4387,0.3820,0.2064),
-        vec3(0.6557,0.3820,0.2064),
-        vec3(0.6557,0.0308,0.2064),
-        vec3(0.4387,0.0308,0.2064),
-        vec3(0.5472,0.0979,0.0308),
-        vec3(0.5472,0.3149,0.0308),
-        vec3(0.5472,0.3149,0.3820)
+    std::vector<vec3> vertices = {
+        vec3(0, -0.525731, 0.850651),
+        vec3(0.850651, 0, 0.525731),
+        vec3(0.850651, 0, -0.525731),
+        vec3(-0.850651, 0, -0.525731),
+        vec3(-0.850651, 0, 0.525731),
+        vec3(-0.525731, 0.850651, 0),
+        vec3(0.525731, 0.850651, 0),
+        vec3(0.525731, -0.850651, 0),
+        vec3(-0.525731, -0.850651, 0),
+        vec3(0, -0.525731, -0.850651),
+        vec3(0, 0.525731, -0.850651),
+        vec3(0, 0.525731, 0.850651)
     };
     const std::vector<face3> faces = {
         face3(2,3,7),
@@ -280,11 +316,24 @@ struct Icosahedron : public Intersectable {
         }
         return hit;
     }
+    void transform(vec3 scale, float alpha, vec3 axis, vec3 dir) {
+        vec4 w;
+        for (auto &v : vertices) {
+            w = {v.x, v.y, v.z, 1};
+            w = w * Minv;
+            v.x = w.x; v.y = w.y; v.z = w.z;
+        }
+        Intersectable::transform(scale, alpha, axis, dir);
+        for (auto &v : vertices) {
+            w = {v.x, v.y, v.z, 1};
+            w = w * M;
+            v.x = w.x; v.y = w.y; v.z = w.z;
+        }
+    }
 };
 struct Cone : public Intersectable {
     vec3 p; //tip point
     vec3 n; //cone axis
-    vec3 lightpos;
     float height;
     float cosa;
 
@@ -293,9 +342,11 @@ struct Cone : public Intersectable {
         n = _n;
         height = _height;
         cosa = _cosa;
-        lightpos = p - n * epsilon;
     }
-
+    void set(vec3 _p, vec3 _n) {
+        p = _p;
+        n = _n;
+    }
     Hit intersect(const Ray& ray) {
         Hit hit;
         vec3 sp = ray.start - p;
@@ -311,24 +362,26 @@ struct Cone : public Intersectable {
         if (discr < 0) return hit;
 
         discr = sqrtf(discr);
-        float t1 = (-b + discr) / (2. * a);
-        float t2 = (-b - discr) / (2. * a);
+        float t, t1, t2;
+        t1 = (-b + discr) / (2 * a);
+        t2 = (-b - discr) / (2 * a);
 
-        float t = (t2 > 0) ? t2 : t1;
-        if (t < 0) return hit;
-
+        t = (t2 > 0) ? t1 : t2;
+        if (t < 0)
+            return hit;
         vec3 cp = ray.start + t * ray.dir - p;
         float h = dot(cp, n);
         if (h < 0. || h > height) {
-            t = t1;
+            t = t2;
             cp = ray.start + t * ray.dir - p;
             h = dot(cp, n);
-            if (h < 0. || h > height) return hit;
+            if (h < 0. || h > height)
+                return hit;
         }
 
-        //vec3 normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
+        vec3 normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
         hit.t = t;
-        hit.position =  ray.start + ray.dir * hit.t;
+        hit.position = ray.start + ray.dir * t;
         vec3 rp = normalize(hit.position - p);
         //hit.normal = hit.position - (length(rp)/cosa * n + p);
         hit.normal = normalize(cross(cross(n, rp), rp));
@@ -342,17 +395,15 @@ struct Camera {
     float fov;
 
     Camera() {
-        vec3 _eye = vec3(-0.75, -0.8, 0.5);
-        vec3 _vup = vec3(0, 0, 1);
-        vec3 _lookat = vec3(0.5, 0.5, 0.5);
-        float _fov = 45 * M_PI / 180;
+        vec3 _eye = vec3(1.0, 0, -1.4);
+        vec3 _vup = vec3(0, 1, 0);
+        vec3 _lookat = vec3(0, 0, 0);
+        float _fov = 50 * M_PI / 180;
         set(_eye, _lookat, _vup, _fov);
     }
-
     Camera(vec3 _eye, vec3 _lookat, vec3 _vup, float _fov) {
         set(_eye, _lookat, _vup, _fov);
     }
-
     void set(vec3 _eye, vec3 _lookat, vec3 vup, float _fov) {
         eye = _eye;
         lookat = _lookat;
@@ -362,17 +413,15 @@ struct Camera {
         right = normalize(cross(vup, w)) * focus * tanf(fov / 2);
         up = normalize(cross(w, right)) * focus * tanf(fov / 2);
     }
-
-    Ray getRay(int X, int Y) {
-        vec3 dir = lookat + right * (2.0 * (X + 0.5) / windowWidth - 1) + up * (2.0 * (Y + 0.5) / windowHeight - 1) - eye;
+    Ray getRay(int x, int y) {
+        vec3 dir = lookat + right * (2.0f*x / windowWidth - 1) + up * (1 - 2.0*y / windowHeight) - eye;
         return Ray(eye, dir);
     }
-
     void Animate(float dt) {
         eye = vec3((eye.x - lookat.x) * cosf(dt) + (eye.z - lookat.z) * sinf(dt) + lookat.x,
                    eye.y,
                    -(eye.x - lookat.x) * sinf(dt) + (eye.z - lookat.z) * cosf(dt) + lookat.z);
-        set(eye, lookat, up, fov);
+        set(eye, lookat, vec3(0, 1, 0), fov);
     }
 };
 struct Light {
@@ -383,12 +432,14 @@ struct Light {
     vec3 radiance(float distance) {
         return Le / (powf(distance, 2));
     }
-    Light(Cone* _c, const vec3 &_position, vec3 _Le = vec3(1, 1, 1)) : position(_position), Le(_Le), cone(_c) {}
-
+    Light(Cone* _c, const vec3 _position, vec3 _Le = vec3(1, 1, 1)) : position(_position), Le(_Le), cone(_c) {}
+    void set(vec3 p) {
+        position = p;
+    }
 };
 
 /// TODO: Please kill me
-const vec3 LIGHTPOS(0.5, 0.5, 0.8);
+const vec3 LIGHTPOS(0.0, 0.0, 0.0);
 
 class Scene {
     std::vector<Intersectable*> objects;
@@ -396,91 +447,102 @@ class Scene {
     Camera camera;
     vec3 La;
 public:
-
     void build() {
         La = vec3(0.2f,0.2f,0.2f);
         Material* ceramicPink = new Material(vec3(0.3, 0.25, 0.3), vec3(2, 2, 2), 40);
 
-        objects.push_back(new Cube(ceramicPink, false));
-        objects.push_back(new Dodecahedron(ceramicPink));
-        objects.push_back(new Icosahedron(ceramicPink));
+        Cube* c = new Cube(ceramicPink, false);
+        c->transform(vec3(0.5,0.5,0.5), 0, vec3(0, 1, 0), vec3(0, 0, 0));
+        objects.push_back(c);
+        Dodecahedron* d = new Dodecahedron(ceramicPink);
+        d->transform(vec3(0.28,0.28,0.28), 0, vec3(0, 1, 0), vec3(0.23843184, -0.23843184, 0.03843184));
+        objects.push_back(d);
+        Icosahedron* i = new Icosahedron(ceramicPink);
+        i->transform(vec3(0.2,0.2,0.2), M_PI / 2.0, vec3(0, 1, 0), vec3(0, -0.31285678, -0.31285678));
+        objects.push_back(i);
 
-        Cone* c1 = new Cone(vec3(0.5, 0.5, 0.5),normalize(vec3(0,0,1)),0.2,0.95,ceramicPink);
-        Cone* c2 = new Cone(vec3(0.4,1,0.6),normalize(vec3(0.3,-1,-0.4)),0.2,0.95,ceramicPink);
-        Cone* c3 = new Cone(vec3(0.6,0.4,1),normalize(vec3(-0.4,0.3,-1)),0.2,0.95,ceramicPink);
+        Cone* c1 = new Cone(vec3(-0.3, 0.3, 0.5),normalize(vec3(0,0,-1)),0.08,0.9,ceramicPink);
+        Cone* c2 = new Cone(vec3(-0.3, 0.5, 0),normalize(vec3(0,-1,0)),0.08,0.9,ceramicPink);
+        Cone* c3 = new Cone(vec3(0.155912, -0.071450, -0.119936),normalize(vec3(0, 0.525731, -0.850651)),0.08,0.9,ceramicPink);
         objects.push_back(c1);
         objects.push_back(c2);
         objects.push_back(c3);
 
-        Light redLight = Light(c1,c1->p + (c1->n * epsilon),vec3(1,0,0));
-        Light greenLight = Light(c2,c2->p + (c2->n * epsilon),vec3(0,1,0));
-        Light blueLight = Light(c3,c3->p + (c3->n * epsilon),vec3(0,0,1));
+        Light redLight = Light(c1,c1->p + (c1->n * 0.005),vec3(10,0,0));
+        Light greenLight = Light(c2,c2->p + (c2->n * 0.005),vec3(0,10,0));
+        Light blueLight = Light(c3,c3->p + (c3->n * 0.005),vec3(0,0,10));
         lights.push_back(redLight);
         lights.push_back(greenLight);
         lights.push_back(blueLight);
     }
-
     void render(std::vector<vec4>& image) {
         for (int Y = 0; Y < windowHeight; Y++) {
 #pragma omp parallel for
             for (int X = 0; X < windowWidth; X++) {
                 vec3 color = trace(camera.getRay(X, Y));
-                image[Y * windowWidth + X] = vec4(color.x, color.y, color.z, 1);
+
+                image[(windowHeight - Y - 1) * windowWidth + X] = vec4(color.x, color.y, color.z, 1);
             }
         }
     }
-
-    void replaceCone(float pX, float pY) {
-        Ray r = camera.getRay(pX, pY);
-        Hit hit = firstIntersect(r);
-        if (hit.t < 0) return;
-        if(!lights.empty()) {
-            Light* closest = &lights[0];
-            float closestDist = length(lights[0].position - hit.position);
-            for (Light light: lights) {
-                float distance = length(light.position - hit.position);
-                if (distance < closestDist) {
-                    closestDist = distance;
-                    closest = &light;
-                }
-            }
-            (*closest).cone->p = hit.position;
-            (*closest).cone->n = hit.normal;
-            (*closest).position = (*closest).cone->p - (*closest).cone->n * epsilon;
+    void moveCone(int x, int y) {
+        Ray ray = camera.getRay(x, y);
+        Hit hit = firstIntersect(ray);
+        Light* closest = nullptr;
+        for (auto& l : lights) {
+            if (closest == nullptr)
+                closest = &l;
+            else
+                if (length(closest->position - hit.position) > length(l.position - hit.position))
+                    closest = &l;
         }
+        closest->cone->set(hit.position, hit.normal);
+        closest->set(hit.position + hit.normal * 0.005);
     }
-
+    bool shadowIntersect(Ray ray, float max) {
+        for (Intersectable * object : objects) {
+            Hit hit = object->intersect(ray);
+            if (hit.t > 0 && hit.t < max)
+                return true;
+        }
+        return false;
+    }
     Hit firstIntersect(Ray ray) {
         Hit bestHit;
         for (Intersectable * object : objects) {
             Hit hit = object->intersect(ray); //  hit.t < 0 if no intersection
             if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
         }
-        if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal =  bestHit.normal * (-1);
+        if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = bestHit.normal * (-1);
         return bestHit;
     }
-
     vec3 trace(Ray ray) {
         Hit hit = firstIntersect(ray);
-        if (hit.t < 0) return La;
+        if (hit.t < 0) return vec3(0, 0, 0);
 
         vec3 outRadiance = La * (1 + dot(hit.normal, -ray.dir)); //L = 0.2 * (1 + dot(N, V) | 0.2 <= L =< 0.4
+        vec3 direction;
         for (Light light : lights) {
-            vec3 direction = normalize(light.position - hit.position);
-            float distance = length(light.position - hit.position);
-            vec3 Le = light.radiance(distance);
-            Ray shadowRay(hit.position + epsilon * hit.normal, direction);
-            Hit shadowHit = firstIntersect(shadowRay);
-            float cosTheta = dot(hit.normal, direction);
-            if (cosTheta > 0 && (shadowHit.t < 0.0 || shadowHit.t > distance)) {
-                outRadiance = outRadiance + Le * hit.material->kd * cosTheta;
-                vec3 halfway = normalize(-ray.dir + direction);
-                float cosDelta = dot(hit.normal, halfway);
-                if (cosDelta > 0)
-                    outRadiance = outRadiance + Le * hit.material->ks * powf(cosDelta, hit.material->shininess);
+            direction = light.position - hit.position;
+            Ray shadowRay(hit.position + hit.normal * epsilon, direction);
+            if (!shadowIntersect(shadowRay, length(direction))) {
+                direction = normalize(direction);
+                float cosTheta = dot(hit.normal, direction);
+                if (cosTheta > 0) {
+                    float distance = length(light.position - hit.position);
+                    vec3 Le = light.radiance(distance);
+                    outRadiance = outRadiance + Le * hit.material->kd * cosTheta;
+                    vec3 halfway = normalize(-ray.dir + direction);
+                    float cosDelta = dot(hit.normal, halfway);
+                    if (cosDelta > 0)
+                        outRadiance = outRadiance + Le * hit.material->ks * powf(cosDelta, hit.material->shininess);
+                }
             }
         }
         return outRadiance;
+    }
+    void animate() {
+//        camera.Animate(-30.0 * M_PI / 180.0);
     }
 };
 
@@ -507,6 +569,7 @@ const char* fragmentSource = R"(
 
 GPUProgram gpuProgram;
 Scene scene;
+static unsigned int frameRendered = 0;
 
 class FullScreenTexturedQuad {
     unsigned int vao;
@@ -538,11 +601,6 @@ void onInitialization() {
     glViewport(0, 0, windowWidth, windowHeight);
     scene.build();
     std::vector<vec4> image(windowWidth * windowHeight);
-    long timeStart = glutGet(GLUT_ELAPSED_TIME);
-    scene.render(image);
-    long timeEnd = glutGet(GLUT_ELAPSED_TIME);
-    printf("Rendering time: %ld milliseconds\n", (timeEnd - timeStart));
-    fullScreenTexturedQuad = new FullScreenTexturedQuad(windowWidth, windowHeight, image);
     gpuProgram.create(vertexSource, fragmentSource, "fragmentColor");
 }
 void onDisplay() {
@@ -550,6 +608,7 @@ void onDisplay() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     std::vector<vec4> image(windowWidth * windowHeight);
     scene.render(image);
+    delete fullScreenTexturedQuad;
     fullScreenTexturedQuad = new FullScreenTexturedQuad(windowWidth, windowHeight, image);
     fullScreenTexturedQuad->Draw();
     glutSwapBuffers();
@@ -560,9 +619,13 @@ void onKeyboard(unsigned char key, int pX, int pY) {}
 void onKeyboardUp(unsigned char key, int pX, int pY) {}
 void onMouse(int button, int state, int pX, int pY) {
     if (state == GLUT_DOWN){
-        scene.replaceCone(pX,pY);
+        scene.moveCone(pX, pY);
         glutPostRedisplay();
     }
 }
 void onMouseMotion(int pX, int pY) {}
-void onIdle() {}
+void onIdle() {
+//    frameRendered += 1;
+//    scene.animate();
+//    glutPostRedisplay();
+}
