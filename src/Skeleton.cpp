@@ -379,11 +379,9 @@ struct Cone : public Intersectable {
                 return hit;
         }
 
-        vec3 normal = normalize(cp * dot(n, cp) / dot(cp, cp) - n);
         hit.t = t;
         hit.position = ray.start + ray.dir * t;
         vec3 rp = normalize(hit.position - p);
-        //hit.normal = hit.position - (length(rp)/cosa * n + p);
         hit.normal = normalize(cross(cross(n, rp), rp));
         hit.material = material;
         return hit;
@@ -417,12 +415,6 @@ struct Camera {
         vec3 dir = lookat + right * (2.0f*x / windowWidth - 1) + up * (1 - 2.0*y / windowHeight) - eye;
         return Ray(eye, dir);
     }
-    void Animate(float dt) {
-        eye = vec3((eye.x - lookat.x) * cosf(dt) + (eye.z - lookat.z) * sinf(dt) + lookat.x,
-                   eye.y,
-                   -(eye.x - lookat.x) * sinf(dt) + (eye.z - lookat.z) * cosf(dt) + lookat.z);
-        set(eye, lookat, vec3(0, 1, 0), fov);
-    }
 };
 struct Light {
     vec3 position;
@@ -438,9 +430,6 @@ struct Light {
     }
 };
 
-/// TODO: Please kill me
-const vec3 LIGHTPOS(0.0, 0.0, 0.0);
-
 class Scene {
     std::vector<Intersectable*> objects;
     std::vector<Light> lights;
@@ -449,21 +438,21 @@ class Scene {
 public:
     void build() {
         La = vec3(0.2f,0.2f,0.2f);
-        Material* ceramicPink = new Material(vec3(0.3, 0.25, 0.3), vec3(2, 2, 2), 40);
+        Material* m = new Material(vec3(0.3, 0.25, 0.3), vec3(2, 2, 2), 40);
 
-        Cube* c = new Cube(ceramicPink, false);
+        Cube* c = new Cube(m, false);
         c->transform(vec3(0.5,0.5,0.5), 0, vec3(0, 1, 0), vec3(0, 0, 0));
         objects.push_back(c);
-        Dodecahedron* d = new Dodecahedron(ceramicPink);
+        Dodecahedron* d = new Dodecahedron(m);
         d->transform(vec3(0.28,0.28,0.28), 0, vec3(0, 1, 0), vec3(0.23843184, -0.23843184, 0.03843184));
         objects.push_back(d);
-        Icosahedron* i = new Icosahedron(ceramicPink);
+        Icosahedron* i = new Icosahedron(m);
         i->transform(vec3(0.2,0.2,0.2), M_PI / 2.0, vec3(0, 1, 0), vec3(0, -0.31285678, -0.31285678));
         objects.push_back(i);
 
-        Cone* c1 = new Cone(vec3(-0.3, 0.3, 0.5),normalize(vec3(0,0,-1)),0.08,0.9,ceramicPink);
-        Cone* c2 = new Cone(vec3(-0.3, 0.5, 0),normalize(vec3(0,-1,0)),0.08,0.9,ceramicPink);
-        Cone* c3 = new Cone(vec3(0.155912, -0.071450, -0.119936),normalize(vec3(0, 0.525731, -0.850651)),0.08,0.9,ceramicPink);
+        Cone* c1 = new Cone(vec3(-0.3, 0.3, 0.5),normalize(vec3(0,0,-1)),0.08,0.9,m);
+        Cone* c2 = new Cone(vec3(-0.3, 0.5, 0),normalize(vec3(0,-1,0)),0.08,0.9,m);
+        Cone* c3 = new Cone(vec3(0.155912, -0.071450, -0.119936),normalize(vec3(0, 0.525731, -0.850651)),0.08,0.9,m);
         objects.push_back(c1);
         objects.push_back(c2);
         objects.push_back(c3);
@@ -541,9 +530,6 @@ public:
         }
         return outRadiance;
     }
-    void animate() {
-//        camera.Animate(-30.0 * M_PI / 180.0);
-    }
 };
 
 const char* vertexSource = R"(
@@ -613,7 +599,6 @@ void onDisplay() {
     fullScreenTexturedQuad->Draw();
     glutSwapBuffers();
 }
-int selector = 0;
 
 void onKeyboard(unsigned char key, int pX, int pY) {}
 void onKeyboardUp(unsigned char key, int pX, int pY) {}
@@ -624,8 +609,4 @@ void onMouse(int button, int state, int pX, int pY) {
     }
 }
 void onMouseMotion(int pX, int pY) {}
-void onIdle() {
-//    frameRendered += 1;
-//    scene.animate();
-//    glutPostRedisplay();
-}
+void onIdle() {}
