@@ -64,12 +64,9 @@
 			vec4 V = normalize(wView);
             vec4 N = normalize(wNormal);
             vec4 H = normalize(L + V);
-			//if (dot(N, V) < 0) N = -N;	// prepare for one-sided surfaces like Klein
             float cost = abs(dot(L,N)), cosd = abs(dot(H,N));
 			vec3 texColor = texture(diffuseTexture, texcoord).rgb;
-            //itt lehet hogy nem jó a sor vége
-            vec3 radiance = texColor * (cost + 0.2f) + vec3(20,20,20) * pow(cosd, 40);
-			//vec3 radiance = ka * lights[i].La + (kd * texColor * cost + material.ks * pow(cosd, material.shininess)) * lights[i].Le;
+            vec3 radiance = texColor * (cost + 0.1f) + vec3(10,10,10) * pow(cosd, 50);
 			fragmentColor = vec4(radiance, 1);
 		}
 	)";
@@ -163,7 +160,7 @@ public:
     CheckerBoardTexture(const int width, const int height) : Texture() {
         glBindTexture(GL_TEXTURE_2D, textureId);
         std::vector<vec3> image(width * height);
-        const vec3 green(1, 0, 0.8), purple(0, 1, 0.2);
+        const vec3 green(1, 0, 0.7), purple(0, 1, 0.25);
         for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
                 image[y * width + x] = (x & 1) ^ (y & 1) ? green : purple;
             }
