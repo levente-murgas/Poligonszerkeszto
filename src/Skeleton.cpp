@@ -15,33 +15,10 @@
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
 #include "framework.h"
-float z = 0.5, w = 0.5;
-bool wireFrame = false;
-//---------------------------
-struct RenderState {
-//---------------------------
-    mat4	           M;
-    Texture *          texture;
-    float              w;
-    float              z;
-};
-//---------------------------
-class Shader : public GPUProgram {
-//---------------------------
-public:
-    virtual void Bind(RenderState state) = 0;
-};
-//---------------------------
-class PhongShader : public Shader {
 //---------------------------
     const char * vertexSource = R"(
 		#version 330
 		precision highp float;
-
-		struct Light {
-			vec3 La, Le;
-			vec4 wLightPos;
-		};
 
         const float alpha = 0.25f;
         const float beta = 0.2f;
@@ -73,16 +50,6 @@ class PhongShader : public Shader {
 		#version 330
 		precision highp float;
 
-		struct Light {
-			vec3 La, Le;
-			vec4 wLightPos;
-		};
-
-		struct Material {
-			vec3 kd, ks, ka;
-			float shininess;
-		};
-
         const vec4 light = vec4(1, 1, -1, -1);
 		uniform sampler2D diffuseTexture;
 
@@ -101,23 +68,16 @@ class PhongShader : public Shader {
             float cost = abs(dot(L,N)), cosd = abs(dot(H,N));
 			vec3 texColor = texture(diffuseTexture, texcoord).rgb;
             //itt lehet hogy nem jó a sor vége
-            vec3 radiance = texColor * (cost + 0.2f) + vec3(20,20,20) * (cosd + 0.2f);
+            vec3 radiance = texColor * (cost + 0.2f) + vec3(20,20,20) * pow(cosd, 40);
 			//vec3 radiance = ka * lights[i].La + (kd * texColor * cost + material.ks * pow(cosd, material.shininess)) * lights[i].Le;
 			fragmentColor = vec4(radiance, 1);
 		}
 	)";
-public:
-    PhongShader() { create(vertexSource, fragmentSource, "fragmentColor"); }
 
-    void Bind(RenderState state) {
-        Use(); 		// make this program run
-        setUniform(z,"z");
-        setUniform(w,"z");
-        setUniform(state.M, "M");
-        setUniform(*state.texture, std::string("diffuseTexture"));
-    }
-};
-
+    GPUProgram gpuProgram;
+    float z = 0.5, w  = 0.5;
+    bool wireFrame = false;
+    int tesselationLevel = 30;
 
 //---------------------------
 template<class T> struct Dnum { // Dual numbers for automatic derivation
@@ -201,12 +161,15 @@ class CheckerBoardTexture : public Texture {
 //---------------------------
 public:
     CheckerBoardTexture(const int width, const int height) : Texture() {
-        std::vector<vec4> image(width * height);
-        const vec4 yellow(1, 1, 0, 1), blue(0, 0, 1, 1);
+        glBindTexture(GL_TEXTURE_2D, textureId);
+        std::vector<vec3> image(width * height);
+        const vec3 green(1, 0, 0.8), purple(0, 1, 0.2);
         for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
-                image[y * width + x] = (x & 1) ^ (y & 1) ? yellow : blue;
+                image[y * width + x] = (x & 1) ^ (y & 1) ? green : purple;
             }
-        create(width, height, image, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_FLOAT, &image[0]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     }
 };
 
@@ -243,7 +206,7 @@ public:
     void create(int N = tessellationLevel, int M = tessellationLevel) {
         glBindVertexArray(vao);
         unsigned int vbo;
-        glGenBuffers(1,&vbo);
+        glGenBuffers(1, &vbo);
         glBindBuffer(GL_ARRAY_BUFFER,vbo);
         nVtxPerStrip = (M + 1) * 2;
         nStrips = N;
@@ -273,16 +236,43 @@ public:
             glDrawArrays((wireFrame) ? GL_LINE_STRIP : GL_TRIANGLE_STRIP, i *  nVtxPerStrip, nVtxPerStrip);
         }
     }
+
+    void Animate(float t1) {
+        mat4 transform = mat4(
+                            cos(t1 / 2), 0, sin(t1 / 2), 0,
+                            0, 1, 0, 0,
+                        -sin(t1 / 2), 0, cos(t1 / 2), 0,
+                        0, 0, 0, 1) *
+                         mat4(
+                                 1, 0, 0, 0,
+                                 0, cos(t1), 0, sin(t1),
+                                 0, 0, 1, 0,
+                                 0, -sin(t1), 0, cos(t1));
+
+        gpuProgram.setUniform(transform,"M");
+        gpuProgram.setUniform(z,"z");
+        gpuProgram.setUniform(w,"w");
+    }
 };
+
+vec4 cross(vec4 v1, vec4 v2) {
+    vec3 v = cross(vec3(v1.x,v1.y,v1.z),vec3(v2.x,v2.y,v2.z));
+    return vec4(v.x,v.y,v.z,0);
+}
+
+vec4 normalize(vec4 v) { return v * 1.0f / sqrtf(dot(v,v)); }
 
 //---------------------------
 class Klein : public ParamSurface {
 //---------------------------
-    const float R = 1, P = 0.5f, epsilon = 0.1;
+    const float R = 1, P = 0.5f, epsilon = 0.1f;
+    Texture *texture;
     //const float size = 1.5f;
 public:
-    Klein() { create(); }
-
+    Klein() {
+        create();
+        texture = new CheckerBoardTexture(15,20);
+    }
     VertexData GenVertexData(float u, float v) {
         VertexData vtxData;
         Dnum2 U(u * M_PI * 2, vec2(1, 0));
@@ -299,121 +289,23 @@ public:
     }
 };
 
-//Klein* klein;
-
-//---------------------------
-struct Object {
-//---------------------------
-    Shader *   shader;
-    Material * material;
-    Texture *  texture;
-    Geometry * geometry;
-    vec3 scale, translation, rotationAxis;
-    float rotationAngle;
-public:
-    Object(Shader * _shader, Material * _material, Texture * _texture, Geometry * _geometry) :
-            scale(vec3(1, 1, 1)), translation(vec3(0, 0, 0)), rotationAxis(0, 0, 1), rotationAngle(0) {
-        shader = _shader;
-        texture = _texture;
-        material = _material;
-        geometry = _geometry;
-    }
-
-    virtual void SetModelingTransform(mat4& M, mat4& Minv) {
-        M = ScaleMatrix(scale) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
-        Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
-    }
-
-    void Draw(RenderState state) {
-        mat4 M, Minv;
-        SetModelingTransform(M, Minv);
-        state.M = M;
-        state.texture = texture;
-        shader->Bind(state);
-        geometry->Draw();
-    }
-
-    virtual void Animate(float tstart, float tend) { rotationAngle = 0.8f * tend; }
-};
-
-//---------------------------
-class Scene {
-//---------------------------
-    std::vector<Object *> objects;
-    Camera camera; // 3D camera
-    std::vector<Light> lights;
-public:
-    void Build() {
-        // Shaders
-        Shader * phongShader = new PhongShader();
-
-        // Material
-        Material * material1 = new Material;
-        material1->kd = vec3(0.8f, 0.6f, 0.4f);
-        material1->ks = vec3(0.3f, 0.3f, 0.3f);
-        material1->ka = vec3(0.2f, 0.2f, 0.2f);
-        material1->shininess = 30;
-
-        // Textures
-        Texture * texture4x8 = new CheckerBoardTexture(4, 8);
-
-        // Geometries
-        Geometry * klein = new Klein();
-
-        Object * kleinObject1 = new Object(phongShader, material1, texture4x8, klein);
-        kleinObject1->translation = vec3(3, 3, 0);
-        objects.push_back(kleinObject1);
-
-        // Camera
-        camera.wEye = vec3(0, 0, 8);
-        camera.wLookat = vec3(0, 0, 0);
-        camera.wVup = vec3(0, 1, 0);
-
-        // Lights
-        lights.resize(1);
-        lights[0].wLightPos = vec4(5, 5, 4, 0);	// ideal point -> directional light source
-        lights[0].La = vec3(0.1f, 0.1f, 1);
-        lights[0].Le = vec3(3, 0, 0);
-
-
-    }
-
-    void Render() {
-        RenderState state;
-        for (Object * obj : objects) obj->Draw(state);
-    }
-
-    void Animate(float t1) {
-        mat4 transform = mat4(
-                        cos(t1 / 2), 0, sin(t1 / 2), 0,
-                        0, 1, 0, 0,
-                        -sin(t1 / 2), 0, cos(t1 / 2), 0,
-                        0, 0, 0, 1) *
-                         mat4(
-                         1, 0, 0, 0,
-                         0, cos(t1), 0, sin(t1),
-                         0, 0, 1, 0,
-                         0, -sin(t1), 0, cos(t1));
-
-    }
-};
-
-Scene scene;
+Klein* klein;
 
 // Initialization, create an OpenGL context
 void onInitialization() {
     glViewport(0, 0, windowWidth, windowHeight);
     glLineWidth(2);
+    klein = new Klein();
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
-    scene.Build();
+    gpuProgram.create(vertexSource,fragmentSource, "fragmentColor");
 }
 
 // Window has become invalid: Redraw
 void onDisplay() {
     glClearColor(0, 0, 0, 0);							// background color
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the screen
-    scene.Render();
+    klein->Draw();
     glutSwapBuffers();									// exchange the two buffers
 }
 
@@ -426,13 +318,13 @@ void onKeyboardUp(unsigned char key, int pX, int pY) { }
 // Move mouse with key pressed
 void onMouseMotion(int pX, int pY) {
     z = (float) (pX - windowWidth / 2) / (windowWidth / 2);
-    z = (float) (-pY + windowHeight / 2) / (windowHeight / 2);
+    w = (float) (-pY + windowHeight / 2) / (windowHeight / 2);
 }
 // Mouse click event
 void onMouse(int button, int state, int pX, int pY) { onMouseMotion(pX,pY); }
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
-    scene.Animate(glutGet(GLUT_ELAPSED_TIME) / 1000.0f);
+    klein->Animate(glutGet(GLUT_ELAPSED_TIME) / 1000.0f);
     glutPostRedisplay();
 }
