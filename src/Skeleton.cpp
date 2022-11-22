@@ -307,7 +307,10 @@ void onDisplay() {
 }
 
 // Key of ASCII code pressed
-void onKeyboard(unsigned char key, int pX, int pY) { }
+void onKeyboard(unsigned char key, int pX, int pY) {
+    if(key == 32)
+        wireFrame = !wireFrame;
+}
 
 // Key of ASCII code released
 void onKeyboardUp(unsigned char key, int pX, int pY) { }
