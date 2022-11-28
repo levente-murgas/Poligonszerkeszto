@@ -50,6 +50,8 @@
 		#version 330
 		precision highp float;
 
+        const float shininess = 50;
+        const vec3 Lin = vec3(10,10,10);
         const vec4 light = vec4(1, 1, -1, -1);
 		uniform sampler2D diffuseTexture;
 
@@ -66,7 +68,8 @@
             vec4 H = normalize(L + V);
             float cost = abs(dot(L,N)), cosd = abs(dot(H,N));
 			vec3 texColor = texture(diffuseTexture, texcoord).rgb;
-            vec3 radiance = texColor * (cost + 0.1f) + vec3(10,10,10) * pow(cosd, 50);
+
+            vec3 radiance = texColor * (cost + 0.1f) + Lin * pow(cosd, shininess);
 			fragmentColor = vec4(radiance, 1);
 		}
 	)";
