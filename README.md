@@ -10,4 +10,4 @@
 - A poligont az 'd' billentyűvel lehet egyszerűsíteni, melynek hatására a poligon csúcsainak száma megfeleződik. Azokat a csúcsokat dobjuk el, amelyek eldobása minimálisan módosítja a poligon alakját, azaz amelynél az eldobott csúcs és a keletkező új él távolsága minimális.
 
 
-![alt text](relative/res/img.png?raw=true)
+![alt text](https://github.com/levente-murgas/grafika1/blob/main/res/img.png?raw=true)
