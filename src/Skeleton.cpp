@@ -1,4 +1,21 @@
 //=============================================================================================
+// Mintaprogram: Zöld háromszög. Ervenyes 2019. osztol.
+//
+// A beadott program csak ebben a fajlban lehet, a fajl 1 byte-os ASCII karaktereket tartalmazhat, BOM kihuzando.
+// Tilos:
+// - mast "beincludolni", illetve mas konyvtarat hasznalni
+// - faljmuveleteket vegezni a printf-et kiveve
+// - Mashonnan atvett programresszleteket forrasmegjeloles nelkul felhasznalni es
+// - felesleges programsorokat a beadott programban hagyni!!!!!!! 
+// - felesleges kommenteket a beadott programba irni a forrasmegjelolest kommentjeit kiveve
+// ---------------------------------------------------------------------------------------------
+// A feladatot ANSI C++ nyelvu forditoprogrammal ellenorizzuk, a Visual Studio-hoz kepesti elteresekrol
+// es a leggyakoribb hibakrol (pl. ideiglenes objektumot nem lehet referencia tipusnak ertekul adni)
+// a hazibeado portal ad egy osszefoglalot.
+// ---------------------------------------------------------------------------------------------
+// A feladatmegoldasokban csak olyan OpenGL fuggvenyek hasznalhatok, amelyek az oran a feladatkiadasig elhangzottak 
+// A keretben nem szereplo GLUT fuggvenyek tiltottak.
+//
 // NYILATKOZAT
 // ---------------------------------------------------------------------------------------------
 // Nev    : Murgás Levente
@@ -15,319 +32,329 @@
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
 #include "framework.h"
-//---------------------------
-    const char * vertexSource = R"(
-		#version 330
-		precision highp float;
 
-        const float alpha = 0.25f;
-        const float beta = 0.2f;
-		uniform mat4  M;
-        uniform float z, w;
+// vertex shader in GLSL: It is a Raw string (C++11) since it contains new line characters
+const char * const vertexSource = R"(
+	#version 330				// Shader 3.3
+	precision highp float;		// normal floats, makes no difference on desktop computers
 
-		layout(location = 0) in vec4  vtxPos;            // pos in modeling space
-		layout(location = 1) in vec4  drdU;
-		layout(location = 2) in vec4  drdV;
-		layout(location = 3) in vec2  vtxUV;
+	uniform mat4 MVP;			// uniform variable, the Model-View-Projection transformation matrix
+	layout(location = 0) in vec2 vertexPosition;
 
-		out vec4 wNormal;		    // normal in world space
-		out vec4 wView;             // view in world space
-		out vec2 texcoord;
+	void main() {
+		gl_Position = vec4(vertexPosition.x, vertexPosition.y, 0, 1) * MVP;		// transform vp from modeling space to normalized device space
+	}
+)";
 
-		void main() {
-		    texcoord = vtxUV;
-			vec4 p4d = vtxPos * M * 0.5f + vec4(0,0,1,2);
-            vec3 n1 = cross(drdU.xyz, drdV.xyz) * w;
-            vec3 n2 = cross(drdU.xyw, drdV.xyw) * z;
-		    wNormal = vec4(n1.xy - n2.xy, n1.z, n2.z) * M;
-		    wView  = -p4d;
-			gl_Position = vec4(p4d.x, p4d.y, p4d.z * length(p4d) / 3, p4d.z);
-		}
-	)";
+// fragment shader in GLSL
+const char * const fragmentSource = R"(
+	#version 330			// Shader 3.3
+	precision highp float;	// normal floats, makes no difference on desktop computers
+	
+	uniform vec3 color;		// uniform variable, the color of the primitive
+	out vec4 outColor;		// computed color of the current pixel
 
-    // fragment shader in GLSL
-    const char * fragmentSource = R"(
-		#version 330
-		precision highp float;
+	void main() {
+		outColor = vec4(color, 1);	// computed color is the color of the primitive
+	}
+)";
 
-        const float shininess = 50;
-        const vec3 Lin = vec3(10,10,10);
-        const vec4 light = vec4(1, 1, -1, -1);
-		uniform sampler2D diffuseTexture;
-
-		in  vec4 wNormal;       // interpolated world sp normal
-		in  vec4 wView;         // interpolated world sp view
-		in  vec2 texcoord;
-
-        out vec4 fragmentColor; // output goes to frame buffer
-
-		void main() {
-            vec4 L = normalize(light);
-			vec4 V = normalize(wView);
-            vec4 N = normalize(wNormal);
-            vec4 H = normalize(L + V);
-            float cost = abs(dot(L,N)), cosd = abs(dot(H,N));
-			vec3 texColor = texture(diffuseTexture, texcoord).rgb;
-
-            vec3 radiance = texColor * (cost + 0.1f) + Lin * pow(cosd, shininess);
-			fragmentColor = vec4(radiance, 1);
-		}
-	)";
-
-    GPUProgram gpuProgram;
-    float z = 0.5, w  = 0.5;
-    bool wireFrame = false;
-    int tesselationLevel = 30;
-
-//---------------------------
-template<class T> struct Dnum { // Dual numbers for automatic derivation
-//---------------------------
-    float f; // function value
-    T d;  // derivatives
-    Dnum(float f0 = 0, T d0 = T(0)) { f = f0, d = d0; }
-    Dnum operator+(Dnum r) { return Dnum(f + r.f, d + r.d); }
-    Dnum operator-(Dnum r) { return Dnum(f - r.f, d - r.d); }
-    Dnum operator*(Dnum r) {
-        return Dnum(f * r.f, f * r.d + d * r.f);
-    }
-    Dnum operator/(Dnum r) {
-        return Dnum(f / r.f, (r.f * d - r.d * f) / r.f / r.f);
-    }
-};
-
-// Elementary functions prepared for the chain rule as well
-template<class T> Dnum<T> Exp(Dnum<T> g) { return Dnum<T>(expf(g.f), expf(g.f)*g.d); }
-template<class T> Dnum<T> Sin(Dnum<T> g) { return  Dnum<T>(sinf(g.f), cosf(g.f)*g.d); }
-template<class T> Dnum<T> Cos(Dnum<T>  g) { return  Dnum<T>(cosf(g.f), -sinf(g.f)*g.d); }
-template<class T> Dnum<T> Tan(Dnum<T>  g) { return Sin(g) / Cos(g); }
-template<class T> Dnum<T> Sinh(Dnum<T> g) { return  Dnum<T>(sinh(g.f), cosh(g.f)*g.d); }
-template<class T> Dnum<T> Cosh(Dnum<T> g) { return  Dnum<T>(cosh(g.f), sinh(g.f)*g.d); }
-template<class T> Dnum<T> Tanh(Dnum<T> g) { return Sinh(g) / Cosh(g); }
-template<class T> Dnum<T> Log(Dnum<T> g) { return  Dnum<T>(logf(g.f), g.d / g.f); }
-template<class T> Dnum<T> Pow(Dnum<T> g, float n) {
-    return  Dnum<T>(powf(g.f, n), n * powf(g.f, n - 1) * g.d);
-}
-
-typedef Dnum<vec2> Dnum2;
-
-
-const int tessellationLevel = 30;
-
-//---------------------------
-struct Camera { // 3D camera
-//---------------------------
-    vec3 wEye, wLookat, wVup;   // extrinsic
-    float fov, asp, fp, bp;		// intrinsic
+// 2D camera
+class Camera2D {
+    vec2 wCenter; // center in world coordinates
+    vec2 wSize;   // width and height in world coordinates
 public:
-    Camera() {
-        asp = (float)windowWidth / windowHeight;
-        fov = 75.0f * (float)M_PI / 180.0f;
-        fp = 1; bp = 20;
-    }
-    mat4 V() { // view matrix: translates the center to the origin
-        vec3 w1 = normalize(wEye - wLookat);
-        vec3 u = normalize(cross(wVup, w));
-        vec3 v = cross(w, u);
-        return TranslateMatrix(wEye * (-1)) * mat4(u.x, v.x, w1.x, 0,
-                                                   u.y, v.y, w1.y, 0,
-                                                   u.z, v.z, w1.z, 0,
-                                                   0,   0,   0,   1);
-    }
+    Camera2D() : wCenter(0, 0), wSize(20, 20) { }
 
-    mat4 P() { // projection matrix
-        return mat4(1 / (tan(fov / 2)*asp), 0,                0,                      0,
-                    0,                      1 / tan(fov / 2), 0,                      0,
-                    0,                      0,                -(fp + bp) / (bp - fp), -1,
-                    0,                      0,                -2 * fp*bp / (bp - fp),  0);
-    }
+    mat4 V() { return TranslateMatrix(-wCenter); }
+    mat4 P() { return ScaleMatrix(vec2(2 / wSize.x, 2 / wSize.y)); }
+
+    mat4 Vinv() { return TranslateMatrix(wCenter); }
+    mat4 Pinv() { return ScaleMatrix(vec2(wSize.x / 2, wSize.y / 2)); }
+
+    void Zoom(float s) { wSize = wSize * s; }
+    void Pan(vec2 t) { wCenter = wCenter + t; }
 };
+Camera2D camera;		// 2D camera
+GPUProgram gpuProgram; // vertex and fragment shaders
 
-//---------------------------
-struct Material {
-//---------------------------
-    vec3 kd, ks, ka;
-    float shininess;
-};
-
-//---------------------------
-struct Light {
-//---------------------------
-    vec3 La, Le;
-    vec4 wLightPos; // homogeneous coordinates, can be at ideal point
-};
-
-//---------------------------
-class CheckerBoardTexture : public Texture {
-//---------------------------
-public:
-    CheckerBoardTexture(const int width, const int height) : Texture() {
-        glBindTexture(GL_TEXTURE_2D, textureId);
-        std::vector<vec3> image(width * height);
-        const vec3 green(1, 0, 0.7), purple(0, 1, 0.25);
-        for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
-                image[y * width + x] = (x & 1) ^ (y & 1) ? green : purple;
-            }
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_FLOAT, &image[0]);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    }
-};
-
-//---------------------------
-struct VertexData {
-//---------------------------
-    vec4 position, drdU, drdV;
-    vec2 texcoord;
-};
-
-//---------------------------
-class Geometry {
-//---------------------------
+class MyPolygon {
+    unsigned int vaoPoints, vboPoints;
 protected:
-    unsigned int vao;        // vertex array object
+    std::vector<vec2> wPoints;
+    float tension = -1;
 public:
-    Geometry() {
-        glGenVertexArrays(1, &vao);
+    void create(){
+        glGenVertexArrays(1,&vaoPoints);
+        glBindVertexArray(vaoPoints);
+        glGenBuffers(1,&vboPoints);
+        glBindBuffer(GL_ARRAY_BUFFER,vboPoints);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
     }
-    virtual void Draw() = 0;
-//    ~Geometry() {
-//        glDeleteVertexArrays(1, &vao);
-//    }
-};
 
-//---------------------------
-class ParamSurface : public Geometry {
-//---------------------------
-    unsigned int nVtxPerStrip, nStrips;
-public:
-    ParamSurface() { nVtxPerStrip = nStrips = 0; }
-    virtual VertexData GenVertexData(float u, float v) = 0;
+    void AddPoint(float cX, float cY) {
+        vec4 wVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
+        wPoints.push_back(vec2(wVertex.x,wVertex.y));
+    }
 
-    void create(int N = tessellationLevel, int M = tessellationLevel) {
-        glBindVertexArray(vao);
-        unsigned int vbo;
-        glGenBuffers(1, &vbo);
-        glBindBuffer(GL_ARRAY_BUFFER,vbo);
-        nVtxPerStrip = (M + 1) * 2;
-        nStrips = N;
-        std::vector<VertexData> vtxData;	// vertices on the CPU
-        for (int i = 0; i < N; i++) {
-            for (int j = 0; j <= M; j++) {
-                vtxData.push_back(GenVertexData((float)j / M, (float)i / N));
-                vtxData.push_back(GenVertexData((float)j / M, (float)(i + 1) / N));
+    vec4 lerp(const vec4& p, const vec4& q, float t) {
+        return p * (1 - t) + q * t;
+    }
+
+    int FindShortestDistPointIndex(vec2 wVertex){
+        int N = wPoints.size();
+        int p = 0;
+        float shortest = 999;
+        float dist;
+        for (int i = 0; i < N; ++i){
+            vec2 A = wPoints[i];
+            vec2 B = wPoints[(N + i + 1) % N];
+            vec2 AB = B - A;
+            vec2 AP = wVertex - A;
+            vec2 BP = wVertex - B;
+
+            float projection = dot(AP,AB);
+            float mod = dot(AB, AB);
+            float d = projection / mod;
+
+            if (d >= 1)
+                dist = length(BP);
+            else if (d <= 0)
+                dist = length(AP);
+            else {
+                vec2 perpPoint = A + AB * d;
+                vec2 ppP = wVertex - perpPoint;
+                dist = length(ppP);
+            }
+            if (dist < shortest) {
+                shortest = dist;
+                p = i;
             }
         }
-        glBufferData(GL_ARRAY_BUFFER, nVtxPerStrip * nStrips * sizeof(VertexData), &vtxData[0], GL_STATIC_DRAW);
-        // Enable the vertex attribute arrays
-        glEnableVertexAttribArray(0);  // attribute array 0 = POSITION
-        glEnableVertexAttribArray(1);  // attribute array 1 = drdU
-        glEnableVertexAttribArray(2);  // attribute array 2 = drdV
-        glEnableVertexAttribArray(3); // attribute array 3 = texcoord
-        // attribute array, components/attribute, component type, normalize?, stride, offset
-        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, position));
-        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, drdU));
-        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, drdV));
-        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, texcoord));
+        return p;
     }
 
-    void Draw() {
-        glBindVertexArray(vao);
-        for (unsigned int i = 0; i < nStrips; i++) {
-            glDrawArrays((wireFrame) ? GL_LINE_STRIP : GL_TRIANGLE_STRIP, i *  nVtxPerStrip, nVtxPerStrip);
+    int AddMovingPoint(float cX, float cY){
+        if(wPoints.size() >= 2) {
+            vec4 hVertex = vec4(cX, cY, 0, 1) * camera.Pinv() * camera.Vinv();
+            vec2 wVertex = vec2(hVertex.x, hVertex.y);
+            int p = FindShortestDistPointIndex(wVertex);
+            wPoints.insert(wPoints.begin() + p + 1, wVertex);
+            return p + 1;
         }
     }
 
-    void Animate(float t1) {
-        mat4 transform = mat4(
-                            cos(t1 / 2), 0, sin(t1 / 2), 0,
-                            0, 1, 0, 0,
-                        -sin(t1 / 2), 0, cos(t1 / 2), 0,
-                        0, 0, 0, 1) *
-                         mat4(
-                                 1, 0, 0, 0,
-                                 0, cos(t1), 0, sin(t1),
-                                 0, 0, 1, 0,
-                                 0, -sin(t1), 0, cos(t1));
+    void HalvePoints(){
+        int N = wPoints.size();
+        std::vector<vec2> wPoints_new;
+        std::vector<float> distances;
+        float dist;
+        for (int i = 0; i < N; i++) {
+            vec2 A = wPoints[i];
+            vec2 P = wPoints[(i + 1) % N];
+            vec2 B = wPoints[(i + 2) % N];
+            vec2 AB = B - A;
+            vec2 AP = P - A;
+            vec2 BP = P - B;
 
-        gpuProgram.setUniform(transform,"M");
-        gpuProgram.setUniform(z,"z");
-        gpuProgram.setUniform(w,"w");
+            float projection = dot(AP,AB);
+            float mod = dot(AB, AB);
+            float d = projection / mod;
+
+            if (d >= 1)
+                dist = length(BP);
+            else if (d <= 0)
+                dist = length(AP);
+            else {
+                vec2 perpPoint = A + AB * d;
+                vec2 ppP = P - perpPoint;
+                dist = length(ppP);
+            }
+            if(!distances.empty()) {
+                bool smallest = true;
+                for(int j = 0; j < distances.size(); j++) {
+                    if(dist > distances[j]){
+                        distances.insert(distances.begin() + j,dist);
+                        wPoints_new.insert(wPoints_new.begin() + j,P);
+                        smallest = false;
+                        break;
+                    }
+                }
+                if(smallest) {
+                    distances.emplace_back(dist);
+                    wPoints_new.emplace_back(P);
+                }
+            }
+            else {
+                distances.emplace_back(dist);
+                wPoints_new.emplace_back(P);
+            }
+        }
+        wPoints_new.erase(wPoints_new.begin(),wPoints_new.begin() + N/2);
+        for(int i = 0; i < wPoints_new.size(); i++){
+            for(int j = 0; j < wPoints.size(); j++){
+                if(wPoints_new[i].x == wPoints[j].x && wPoints_new[i].y == wPoints[j].y){
+                    wPoints.erase(wPoints.begin() + j);
+                    break;
+                }
+            }
+        }
+    }
+
+    vec2 Hermite(vec2 p0, vec2 v0, float t0, vec2 p1, vec2 v1, float t1, float t){
+        float deltat = t1 - t0;
+        t -= t0;
+        float deltat2 = deltat * deltat;
+        float deltat3 = deltat * deltat2;
+        vec2 a0 = p0, a1 = v0;
+        vec2 a2 = (p1 - p0) * 3 / deltat2 - (v1 + v0 * 2) / deltat;
+        vec2 a3 = (p0 - p1) * 2 / deltat3 + (v1 + v0) / deltat2;
+        return ((a3 * t + a2) * t + a1) * t + a0;
+    }
+
+    void CatmullRom() {
+        std::vector<vec2> wPoints_new;
+        int N = wPoints.size();
+        for (int i = 0; i < N; ++i) {
+            wPoints_new.emplace_back(wPoints[(N + i + 1) % N]);
+            vec2 A = (wPoints[(N + i + 1) % N] - wPoints[(N + i + 0) % N]) / (i + 1 - i + 0);
+            vec2 B = (wPoints[(N + i + 2) % N] - wPoints[(N + i + 1) % N]) / (i + 2 - i + 1);
+            vec2 C = (wPoints[(N + i + 3) % N] - wPoints[(N + i + 2) % N]) / (i + 3 - i + 2);
+            vec2 v0 = (A + B) * (float) ((1.0f - tension) / 2.0f);
+            vec2 v1 = (B + C) * (float) ((1.0f - tension) / 2.0f);
+            wPoints_new.emplace_back(Hermite(wPoints[(N + i + 1) % N], v0, i + 1, wPoints[(N + i + 2) % N], v1, i + 2, i + 1.5));
+        }
+        wPoints = wPoints_new;
+    }
+
+    void CR_spline() {
+        int N = wPoints.size();
+        std::vector<vec2> CR;
+        for (int i = 0; i < N; ++i) {
+            vec2 A = (wPoints[(N + i + 1) % N] - wPoints[(N + i + 0) % N]) / (i + 1 - i + 0);
+            vec2 B = (wPoints[(N + i + 2) % N] - wPoints[(N + i + 1) % N]) / (i + 2 - i + 1);
+            vec2 C = (wPoints[(N + i + 3) % N] - wPoints[(N + i + 2) % N]) / (i + 3 - i + 2);
+            vec2 v0 = (A + B) * (float) ((1.0f - tension) / 2.0f);
+            vec2 v1 = (B + C) * (float) ((1.0f - tension) / 2.0f);
+            for (float t = i + 1; t < i + 2; t += 0.05)
+                CR.emplace_back(Hermite(wPoints[(N + i + 1) % N], v0, i + 1, wPoints[(N + i + 2) % N], v1, i + 2, t));
+        }
+        static GLuint vbo = 0;
+        if (vbo == 0)
+            glGenBuffers(1,&vbo);
+        glBindVertexArray(vaoPoints);
+        glBindBuffer(GL_ARRAY_BUFFER,vbo);
+        glBufferData(GL_ARRAY_BUFFER,CR.size() * sizeof(vec2), &CR[0], GL_DYNAMIC_DRAW);
+        gpuProgram.setUniform(vec3(0,0.5,1),"color");
+
+        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
+        glDrawArrays(GL_LINE_STRIP,0,CR.size());
+    }
+
+    void MovePoint(int movingPoint, float cX, float cY){
+        vec4 hVertex = vec4(cX,cY,0,1) * camera.Pinv() * camera.Vinv();
+        wPoints[movingPoint] = vec2(hVertex.x,hVertex.y);
+    }
+
+    void Draw(){
+       // CR_spline();
+        mat4 VPTransform = camera.V() * camera.P();
+        gpuProgram.setUniform(VPTransform, "MVP");
+
+        glBindVertexArray(vaoPoints);
+        glBindBuffer(GL_ARRAY_BUFFER,vboPoints);
+        glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE, sizeof(vec2), NULL);
+        glBufferData(GL_ARRAY_BUFFER,wPoints.size() * sizeof(vec2), &wPoints[0], GL_DYNAMIC_DRAW);
+
+        if(wPoints.size() >= 2){
+            gpuProgram.setUniform(vec3(1,1,1),"color");
+            glDrawArrays(GL_LINE_LOOP,0,wPoints.size());
+        }
+
+        if(!wPoints.empty()) {
+            gpuProgram.setUniform(vec3(1,0,0),"color");
+            glPointSize(10.0f);
+            glDrawArrays(GL_POINTS,0,wPoints.size());
+        }
+
     }
 };
 
-vec4 cross(vec4 v1, vec4 v2) {
-    vec3 v = cross(vec3(v1.x,v1.y,v1.z),vec3(v2.x,v2.y,v2.z));
-    return vec4(v.x,v.y,v.z,0);
-}
 
-vec4 normalize(vec4 v) { return v * 1.0f / sqrtf(dot(v,v)); }
 
-//---------------------------
-class Klein : public ParamSurface {
-//---------------------------
-    const float R = 1, P = 0.5f, epsilon = 0.1f;
-    Texture *texture;
-    //const float size = 1.5f;
-public:
-    Klein() {
-        create();
-        texture = new CheckerBoardTexture(15,20);
-    }
-    VertexData GenVertexData(float u, float v) {
-        VertexData vtxData;
-        Dnum2 U(u * M_PI * 2, vec2(1, 0));
-        Dnum2 V(v * M_PI * 2, vec2(0, 1));
-        Dnum2 X = (Cos(U / 2) * Cos(V) - Sin(U / 2) * Sin(V * 2)) * R;
-        Dnum2 Y = (Sin(U / 2) * Cos(V) + Cos(U / 2) * Sin(V * 2)) * R;
-        Dnum2 Z = Cos(U) * (Sin(V) * epsilon + 1) * P;
-        Dnum2 W = Sin(U) * (Sin(V) * epsilon + 1) * P;
-        vtxData.position = vec4(X.f, Y.f, Z.f,W.f);
-        vtxData.drdU = vec4 (X.d.x, Y.d.x, Z.d.x, W.d.x);
-        vtxData.drdV = vec4 (X.d.y, Y.d.y, Z.d.y, W.d.y);
-        vtxData.texcoord = vec2(u, v);
-        return vtxData;
-    }
-};
+MyPolygon polygon;
 
-Klein* klein;
+
 
 // Initialization, create an OpenGL context
 void onInitialization() {
-    glViewport(0, 0, windowWidth, windowHeight);
-    glLineWidth(2);
-    klein = new Klein();
-    glEnable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    gpuProgram.create(vertexSource,fragmentSource, "fragmentColor");
+	glViewport(0, 0, windowWidth, windowHeight);
+    polygon.create();
+	// create program for the GPU
+	gpuProgram.create(vertexSource, fragmentSource, "outColor");
 }
 
 // Window has become invalid: Redraw
 void onDisplay() {
-    glClearColor(0, 0, 0, 0);							// background color
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the screen
-    klein->Draw();
-    glutSwapBuffers();									// exchange the two buffers
+	glClearColor(0, 0, 0, 0);     // background color
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear frame buffer
+    polygon.Draw();
+	glutSwapBuffers(); // exchange buffers for double buffering
 }
 
 // Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
-    if(key == 32)
-        wireFrame = !wireFrame;
+	if (key == 's') {
+        polygon.CatmullRom();
+        glutPostRedisplay();
+    }
+    else if (key == 'd') {
+        polygon.HalvePoints();
+        glutPostRedisplay();
+    }
 }
 
 // Key of ASCII code released
-void onKeyboardUp(unsigned char key, int pX, int pY) { }
+void onKeyboardUp(unsigned char key, int pX, int pY) {
+}
+
+
+int movingPoint = -1;
+
+// Mouse click event
+void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel coordinates of the cursor in the coordinate system of the operation system
+	if(button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        // Convert to normalized device space
+        float cX = 2.0f * pX / windowWidth - 1;    // flip y axis
+        float cY = 1.0f - 2.0f * pY / windowHeight;
+        polygon.AddPoint(cX,cY);
+        glutPostRedisplay();
+    }
+
+    if(button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN){
+        // Convert to normalized device space
+        float cX = 2.0f * pX / windowWidth - 1;    // flip y axis
+        float cY = 1.0f - 2.0f * pY / windowHeight;
+        movingPoint = polygon.AddMovingPoint(cX,cY);
+        glutPostRedisplay();
+    }
+
+    if(button == GLUT_RIGHT_BUTTON && state == GLUT_UP){
+        movingPoint = -1;
+    }
+}
 
 // Move mouse with key pressed
-void onMouseMotion(int pX, int pY) {
-    z = (float) (pX - windowWidth / 2) / (windowWidth / 2);
-    w = (float) (-pY + windowHeight / 2) / (windowHeight / 2);
+void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the cursor in the coordinate system of the operation system
+    // Convert to normalized device space
+    float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
+    float cY = 1.0f - 2.0f * pY / windowHeight;
+    if(movingPoint >= 0) polygon.MovePoint(movingPoint,cX,cY);
+    glutPostRedisplay();
 }
-// Mouse click event
-void onMouse(int button, int state, int pX, int pY) { onMouseMotion(pX,pY); }
 
 // Idle event indicating that some time elapsed: do animation here
 void onIdle() {
-    klein->Animate(glutGet(GLUT_ELAPSED_TIME) / 1000.0f);
-    glutPostRedisplay();
+	long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
 }
